@@ -42,16 +42,16 @@ mainCRTStartup:
 
 ; Copies memory from one location to another, args(QWORD destination pointer, QWORD source pointer, QWORD bytes amount)
 mem_copy:
-    mov rax, 0  ; Set counter to 0
+    mov rax, 0  ; Set offset to 0
 
     .loop:
         cmp rax, r8
-        jge .loop_end  ; Loop until counter is equal to the amount
+        jge .loop_end  ; Loop until the offset is equal to the amount
 
         mov bl, [rdx + rax]  ; Moves a byte from source + offset to bl
         mov [rcx + rax], bl  ; Moves a byte from bl to destination + offset
 
-        inc rax
+        inc rax  ; Increment the offset
         jmp .loop
 
     .loop_end:
@@ -232,7 +232,7 @@ dynamic_array:
             call ._modify_capacity  ; Reallocates memory and updates capacity
             add rsp, 40  ; Restore the stack
 
-        .end_clear
+        .end_clear:
             ret
 
 

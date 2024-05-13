@@ -136,6 +136,10 @@
   <ItemGroup>
     <NASM Include="src\main.asm" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="outline.txt" />
+    <Text Include="scratch.txt" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(ProgramFiles)\NASM\VSNASM\nasm.targets" />
