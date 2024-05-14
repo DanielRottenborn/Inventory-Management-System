@@ -5,6 +5,11 @@ extern GetProcessHeap  ; Returns a handle to the default heap of the process
 extern HeapAlloc  ; Heap memory allocation
 extern HeapReAlloc  ; Heap memory reallocation
 extern HeapFree  ; Heap memory release
+
+extern GetStdHandle  ; Returns standard console handles
+extern ReadConsoleA  ; Reads ANSI characters from standard input
+extern FlushConsoleInputBuffer  ; Flushes input buffer
+
 extern ExitProcess  ; Win32 API exit procedure
 
 global mainCRTStartup  ; Entry point for the CONSOLE subsystem
@@ -226,7 +231,7 @@ dynamic_array:
         cmp ebx, 10  ; Compare against min capacity
         jle .end_clear  ; Skip reallocation if capacity is minimal
 
-        ; Set min capacity
+            ; Set min capacity
             mov edx, 10  ; set min capacity as an argument
             sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
             call ._modify_capacity  ; Reallocates memory and updates capacity
@@ -302,6 +307,117 @@ dynamic_array:
     ._memory_error:
         jmp exit
 
+
+; Console IO functionality
+console:
+
+    ;Reads up to 63 ANSI characters from console input without formatting, null-terminates the resulting string, 
+    ;Flushes the input buffer, Returns 0 if input string length exceeds 63 characters, args(QWORD destination 64-byte buffer pointer)
+    ._read_raw:
+        ; Save arguments
+        mov [rsp + 8], rcx  ; Save destination buffer pointer in shadow space
+
+        ; Get input handle
+        mov ecx, -10  ; Set to -10 to receive an input handle
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call GetStdHandle  ; Returns standard input handle
+        add rsp, 40  ; Restore the stack
+        mov [rsp + 24], rax  ; Save input handle in shadow space
+
+        ; Read from standard input
+        sub rsp, 80  ; Reserve space for a temporary buffer
+        mov rcx, rax  ; Set input handle
+        lea rdx, [rsp]  ; Set destination buffer
+        mov r8d, 66  ; Read 63 characters + CR + LF + another character to see if input is greater tan 63 characters
+        lea r9, [rsp + 16 + 80]  ; The procedure will save the number of characters it will have read in shadow space
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        mov QWORD [rsp], 0  ; Input control argument should be NULL for ANSI mode
+        call ReadConsoleA  ; Reads input
+        add rsp, 40  ; Restore the stack
+
+        ; Check for errors (zero return)
+        cmp rax, 0
+        je ._console_error
+
+        ; NULL-terminate the string
+        mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
+        sub rcx, 2  ; Get the offset to CR character
+        add rcx, rsp  ; Add the base address of the temporary buffer
+        mov BYTE [rcx], 0 ; Set the CR character to NULL
+
+        ; Copy the string to the destination
+        mov rcx, [rsp + 8 + 80]  ; Retrieve the destination buffer pointer
+        lea rdx, [rsp]  ; Set the source string pointer
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary        
+        call string.copy  ; Copy the string to the destination
+        add rsp, 40  ; Restore the stack
+
+        ; Check if input string length did not exceed 63 characters
+        mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
+        cmp ecx, 65  ; Compare against max length + CR + LF
+        jle ._end_read_raw  ; Return if string length did not exceed max length
+
+            ; NULL-terminate the resulting string again if string length exceeds max length
+            mov rcx, [rsp + 8 + 80]  ; Retrieve the destination buffer pointer
+            add rcx, 63  ; Get the pointer to the last character
+            mov BYTE [rcx], 0 ; Set the last character to NULL
+
+            ; Flushing remaining input characters
+            ._flush_buffer:
+                ; Check if there might be more unread characters
+                mov cl, [rsp + 65] ; Load the last character from the discard buffer
+                cmp cl, 10
+                je ._end_flush_buffer  ; Stop flushing if the last character read is a newline character
+                mov ecx, [rsp + 16 + 80]  ; Load the number of characters the ReadConsole procedure has previously read
+                cmp ecx, 66  ; Compare against discard buffer size
+                jl ._end_flush_buffer  ; Stop flushing if the procedure has read less than 64 characters
+
+                ; Read remaining characters from standard input
+                mov rcx, [rsp + 24 + 80]  ; Retrieve standard input handle
+                lea rdx, [rsp]  ; Specify the discard buffer
+                mov r8d, 66  ; Read 66 characters
+                lea r9, [rsp + 16 + 80]  ; The procedure will save the number of characters it will have read in shadow space
+                sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+                mov QWORD [rsp], 0  ; Input control argument should be NULL for ANSI mode
+                call ReadConsoleA  ; Reads and flushes 64 characters
+                add rsp, 40  ; Restore the stack
+
+                ; Check for errors (zero return)
+                cmp rax, 0
+                je ._console_error
+
+                jmp ._flush_buffer  ; Continue flushing
+
+            ._end_flush_buffer:
+                add rsp, 80  ; Restore the stack
+                mov rax, 0  ; Return zero if string length has exceeded max length
+                ret
+
+        ._end_read_raw:
+            add rsp, 80  ; Restore the stack
+            mov rax, 1  ; Return non-zero value if the whole input was read
+            ret
+
+    ._console_error:
+        jmp exit
+
+
+; String manipulation
+string:
+
+    ; Copies a NULL-terminated string, args(QWORD destination pointer, QWORD source string pointer)
+    .copy:
+        mov rax, 0  ; Set offset to 0
+
+        ._loop:
+            mov bl, [rdx + rax]  ; Moves a char from source + offset to bl
+            mov [rcx + rax], bl  ; Moves a char from bl to destination + offset
+
+            inc rax  ; Increment the offset
+            cmp bl, 0
+            jne ._loop  ; Loop until the NULL character is reached and cpoied
+
+        ret
 
 exit:
     mov  ecx, 0  ; Load exit status
