@@ -1,6 +1,7 @@
 default rel  ; Use RIP-relative addressing
 bits 64  ; Target 64-bit architecture exclusively
 
+
 extern GetProcessHeap  ; Returns a handle to the default heap of the process 
 extern HeapAlloc  ; Heap memory allocation
 extern HeapReAlloc  ; Heap memory reallocation
@@ -11,6 +12,7 @@ extern ReadConsoleA  ; Reads ANSI characters from standard input
 extern FlushConsoleInputBuffer  ; Flushes input buffer
 
 extern ExitProcess  ; Win32 API exit procedure
+
 
 global mainCRTStartup  ; Entry point for the CONSOLE subsystem
 
@@ -49,18 +51,19 @@ mainCRTStartup:
 mem_copy:
     mov rax, 0  ; Set offset to 0
 
-    .loop:
+    ._loop:
         cmp rax, r8
-        jge .loop_end  ; Loop until the offset is equal to the amount
+        jge ._loop_end  ; Loop until the offset is equal to the amount
 
         mov bl, [rdx + rax]  ; Moves a byte from source + offset to bl
         mov [rcx + rax], bl  ; Moves a byte from bl to destination + offset
 
         inc rax  ; Increment the offset
-        jmp .loop
+        jmp ._loop
 
-    .loop_end:
-        ret
+    ._loop_end:
+
+    ret
 
 
 ; Dynamic array functionality
@@ -77,6 +80,10 @@ dynamic_array:
         sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
         call GetProcessHeap  ; Returns a handle to the default heap of the process
         add rsp, 40  ; Restore the stack
+
+        ; Check for errors (NULL return)
+        cmp rax, 0
+        je ._memory_error
 
         ; Allocate memory
         mov rcx, rax  ; Use the handle as a first argument
@@ -122,26 +129,27 @@ dynamic_array:
             add rsp, 40  ; Restore the stack
 
         ._push:
-            ; Get offset to place a new member
-            mov rcx, [rsp + 8]  ; Retrieve array struct pointer
-            mov edx, [rcx + 8]  ; Get member count
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call .get  ; Get pointer to the next available member location
-            add rsp, 40  ; Restore the stack
 
-            ; Push new member to the array and increment member count
-            mov rbx, [rsp + 8]  ; Retrieve array struct pointer
-            mov rcx, rax  ; Set destination argument
-            mov rdx, [rsp + 16]  ; Retrieve new member pointer to use as a source argument
-            mov r8d, [rbx + 16]  ; Get member size
+        ; Get offset to place a new member
+        mov rcx, [rsp + 8]  ; Retrieve array struct pointer
+        mov edx, [rcx + 8]  ; Get member count
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call .get  ; Get pointer to the next available member location
+        add rsp, 40  ; Restore the stack
 
-            mov eax, [rbx + 8]  ; Get member count
-            inc eax  ; Increment member count
-            mov [rbx + 8], eax  ; Update member count
+        ; Push new member to the array and increment member count
+        mov rbx, [rsp + 8]  ; Retrieve array struct pointer
+        mov rcx, rax  ; Set destination argument
+        mov rdx, [rsp + 16]  ; Retrieve new member pointer to use as a source argument
+        mov r8d, [rbx + 16]  ; Get member size
 
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call mem_copy  ; Copy new member to the end of the array
-            add rsp, 40  ; Restore the stack
+        mov eax, [rbx + 8]  ; Get member count
+        inc eax  ; Increment member count
+        mov [rbx + 8], eax  ; Update member count
+
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call mem_copy  ; Copy new member to the end of the array
+        add rsp, 40  ; Restore the stack
 
         ret
 
@@ -218,7 +226,8 @@ dynamic_array:
             add rsp, 40  ; Restore the stack
 
         ._end_remove:
-            ret
+
+        ret
 
 
     ; Clears the array, args(QWORD array struct pointer)
@@ -229,7 +238,7 @@ dynamic_array:
         ; Check cucrent capacity
         mov ebx, [rcx + 12]  ; Load capacity
         cmp ebx, 10  ; Compare against min capacity
-        jle .end_clear  ; Skip reallocation if capacity is minimal
+        jle ._end_clear  ; Skip reallocation if capacity is minimal
 
             ; Set min capacity
             mov edx, 10  ; set min capacity as an argument
@@ -237,8 +246,9 @@ dynamic_array:
             call ._modify_capacity  ; Reallocates memory and updates capacity
             add rsp, 40  ; Restore the stack
 
-        .end_clear:
-            ret
+        ._end_clear:
+
+         ret
 
 
     ; Deallocates the array, args(QWORD array struct pointer)
@@ -250,6 +260,10 @@ dynamic_array:
         sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
         call GetProcessHeap  ; Returns a handle to the default heap of the process
         add rsp, 40  ; Restore the stack
+
+        ; Check for errors (NULL return)
+        cmp rax, 0
+        je ._memory_error
 
         ; Free memory
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer 
@@ -277,6 +291,10 @@ dynamic_array:
         sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
         call GetProcessHeap  ; Returns a handle to the default heap of the process
         add rsp, 40  ; Restore the stack
+
+        ; Check for errors (NULL return)
+        cmp rax, 0
+        je ._memory_error
 
         ; Reallocate memory
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
@@ -336,7 +354,7 @@ console:
         add rsp, 40  ; Restore the stack
 
         ; Check for errors (zero return)
-        cmp rax, 0
+        cmp eax, 0
         je ._console_error
 
         ; NULL-terminate the string
@@ -383,15 +401,16 @@ console:
                 add rsp, 40  ; Restore the stack
 
                 ; Check for errors (zero return)
-                cmp rax, 0
+                cmp eax, 0
                 je ._console_error
 
                 jmp ._flush_buffer  ; Continue flushing
 
             ._end_flush_buffer:
-                add rsp, 80  ; Restore the stack
-                mov rax, 0  ; Return zero if string length has exceeded max length
-                ret
+
+            add rsp, 80  ; Restore the stack
+            mov rax, 0  ; Return zero if string length has exceeded max length
+            ret
 
         ._end_read_raw:
             add rsp, 80  ; Restore the stack
