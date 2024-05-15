@@ -26,10 +26,19 @@ NULL equ 0  ; NULL
 %define ERROR_COLOR ESC, "[91m"  ; Changes text color to bright red
 
 
+%macro call_aligned 1  ; Alligns the stack for procedure calls
+    sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+    call %1  ; Call the procedure
+    add rsp, 40  ; Restore the stack
+
+%endmacro
+
+
 ; Rodata section
 section .rodata
 messages:
     .input_too_large: db WARNING_COLOR, "Input length exceeds 63 characters, string will be trimmed.", REGULAR_COLOR, LF, NULL
+
     .memory_error: db ERROR_COLOR,"An error occured while managing heap memory.", REGULAR_COLOR, LF, NULL
     .input_error: db ERROR_COLOR,"An error occured while reading input.", REGULAR_COLOR, LF, NULL
 
@@ -88,10 +97,8 @@ dynamic_array:
         mov QWORD [rsp + 16], 0  ; Initialize with 0 for convinient 64-bit multiplication
         mov [rsp + 16], edx  ; Save member size in shadow space
         
-        ; Get the heap handle
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call GetProcessHeap  ; Returns a handle to the default heap of the process
-        add rsp, 40  ; Restore the stack
+        ; Get default heap handle
+        call_aligned GetProcessHeap
 
         ; Check for errors (NULL return)
         cmp rax, 0
@@ -103,9 +110,7 @@ dynamic_array:
         mul QWORD [rsp + 16]  ; Multiply by member size (affects rdx)
         mov r8, rax  ; Resulting number of bytes to allocate
         mov edx, 0  ; Allocation flags
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call HeapAlloc  ; Returns a pointer to the allocated memory
-        add rsp, 40  ; Restore the stack
+        call_aligned HeapAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
         cmp rax, 0
@@ -136,18 +141,14 @@ dynamic_array:
             ; Increase capacity
             mov edx, [rcx + 12]  ; Load current array capacity as an argument
             add edx, edx  ; Double it
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call ._modify_capacity  ; Reallocates memory and updates capacity
-            add rsp, 40  ; Restore the stack
+            call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
 
         ._push:
 
         ; Get offset to place a new member
         mov rcx, [rsp + 8]  ; Retrieve array struct pointer
         mov edx, [rcx + 8]  ; Get member count
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call .get  ; Get pointer to the next available member location
-        add rsp, 40  ; Restore the stack
+        call_aligned .get  ; Get pointer to the next available member location
 
         ; Push new member to the array and increment member count
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
@@ -159,9 +160,7 @@ dynamic_array:
         inc eax  ; Increment member count
         mov [rbx + 8], eax  ; Update member count
 
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call mem_copy  ; Copy new member to the end of the array
-        add rsp, 40  ; Restore the stack
+        call_aligned mem_copy  ; Copy new member to the end of the array
 
         ret
 
@@ -184,9 +183,7 @@ dynamic_array:
         mov [rsp + 16], edx  ; Save element index in shadow space
 
         ; Get pointer to the member to be removed
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call .get  ; Get pointer
-        add rsp, 40  ; Restore the stack        
+        call_aligned .get     
 
         ; Set up destination argument
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
@@ -206,9 +203,7 @@ dynamic_array:
         add rdx, r9  ; Offset source pointer by 1 member
 
         ; Shift elements
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call mem_copy  ; Shift elements
-        add rsp, 40  ; Restore the stack
+        call_aligned mem_copy
 
         ; Decrement member count
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
@@ -233,9 +228,7 @@ dynamic_array:
             ; Decrease capacity
             mov rcx, rbx  ; Array struct pointer argument
             mov edx, eax  ; New capacity
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call ._modify_capacity  ; Reallocates memory and updates capacity
-            add rsp, 40  ; Restore the stack
+            call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
 
         ._end_remove:
 
@@ -254,9 +247,7 @@ dynamic_array:
 
             ; Set min capacity
             mov edx, 10  ; set min capacity as an argument
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call ._modify_capacity  ; Reallocates memory and updates capacity
-            add rsp, 40  ; Restore the stack
+            call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
 
         ._end_clear:
 
@@ -268,10 +259,8 @@ dynamic_array:
         ; Save arguments
         mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
  
-        ; Get the heap handle
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call GetProcessHeap  ; Returns a handle to the default heap of the process
-        add rsp, 40  ; Restore the stack
+        ; Get default heap handle
+        call_aligned GetProcessHeap
 
         ; Check for errors (NULL return)
         cmp rax, 0
@@ -282,9 +271,7 @@ dynamic_array:
         mov rcx, rax  ; Use the handle as a first argument
         mov edx, 0  ; Allocation flags
         mov r8, [rbx]  ; Address of the memory chunk to be released
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call HeapFree  ; Releases memory
-        add rsp, 40  ; Restore the stack
+        call_aligned HeapFree  ; Releases memory
 
         ; Check for errors (NULL return)
         cmp rax, 0
@@ -299,10 +286,8 @@ dynamic_array:
         mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
         mov [rsp + 16], edx  ; Save new capacity in shadow space        
 
-        ; Get the heap handle
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call GetProcessHeap  ; Returns a handle to the default heap of the process
-        add rsp, 40  ; Restore the stack
+        ; Get default heap handle
+        call_aligned GetProcessHeap
 
         ; Check for errors (NULL return)
         cmp rax, 0
@@ -317,9 +302,7 @@ dynamic_array:
         mov r9, rax  ; Resulting number of bytes to reallocate
         mov edx, 0  ; Reallocation flags
         mov r8, [rbx]  ; Address of the memory chunk to be reallocated
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call HeapReAlloc  ; Returns a pointer to the allocated memory
-        add rsp, 40  ; Restore the stack
+        call_aligned HeapReAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
         cmp rax, 0
@@ -336,9 +319,7 @@ dynamic_array:
 
     ._memory_error:
         lea rcx, [messages.memory_error]  ; Notify the user that an error occured while managing heap memory
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call console.print_string  ; Print error message
-        add rsp, 40  ; Restore the stack
+        call_aligned console.print_string  ; Print error message
 
         jmp exit
 
@@ -369,9 +350,7 @@ console:
 
         ; Get output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call GetStdHandle  ; Returns standard output handle
-        add rsp, 40  ; Restore the stack
+        call_aligned GetStdHandle  ; Returns standard output handle
 
         ; Write to standard output
         mov rcx, rax  ; Set output handle
@@ -390,36 +369,29 @@ console:
         ret
 
 
-    ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, and trims the string
+    ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, trims the string,
+    ;And displays a warning message in case input exceeds max length
     .read_string:
         ; Save arguments
         mov [rsp + 8], rcx  ; Save destination buffer pointer in shadow space
 
         ; Read raw input string
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call ._read_raw  ; Reads unformatted string
-        add rsp, 40  ; Restore the stack
+        call_aligned ._read_raw
         mov [rsp + 16], rax  ; Save ._read_raw return value
 
         ; Format the string
         mov rcx, [rsp + 8]  ; Retrieve the buffer pointer
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call string.format  ; Formats the string
-        add rsp, 40  ; Restore the stack
+        call_aligned string.format  ; Formats the string
 
         ; Trim the string
         mov rcx, [rsp + 8]  ; Retrieve the buffer pointer
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call string.trim  ; Trims the string
-        add rsp, 40  ; Restore the stack
+        call_aligned string.trim  ; Trims the string
 
         cmp QWORD [rsp + 16], 0  ; Check if input size was larger than max supported input length
         jne ._end_read_string  ; Skip warning if it wasn't
 
             lea rcx, [messages.input_too_large]  ; Notify the user that input string will be trimmed
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call .print_string  ; Print warning message
-            add rsp, 40  ; Restore the stack
+            call_aligned .print_string  ; Print warning message
 
         ._end_read_string:
 
@@ -434,9 +406,7 @@ console:
 
         ; Get input handle
         mov ecx, -10  ; Set to -10 to receive an input handle
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call GetStdHandle  ; Returns standard input handle
-        add rsp, 40  ; Restore the stack
+        call_aligned GetStdHandle  ; Returns standard input handle
         mov [rsp + 24], rax  ; Save input handle in shadow space
 
         ; Read from standard input
@@ -462,10 +432,8 @@ console:
 
         ; Copy the string to the destination
         mov rcx, [rsp + 8 + 80]  ; Retrieve the destination buffer pointer
-        lea rdx, [rsp]  ; Set the source string pointer
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary        
-        call string.copy  ; Copy the string to the destination
-        add rsp, 40  ; Restore the stack
+        lea rdx, [rsp]  ; Set the source string pointer      
+        call_aligned string.copy  ; Copy the string to the destination
 
         ; Check if input string length did not exceed 63 characters
         mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
@@ -514,16 +482,17 @@ console:
             mov rax, 1  ; Return non-zero value if the whole input was read
             ret
 
+
     ._input_error:
         lea rcx, [messages.input_error]  ; Notify the user that an error occured while reading input
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        call .print_string  ; Print error message
-        add rsp, 40  ; Restore the stack
+        call_aligned .print_string  ; Print error message
 
         jmp exit
+
 
     ._output_error:
         jmp exit
+
 
 ; String manipulation
 string:
@@ -541,6 +510,7 @@ string:
             jne ._copy_loop  ; Loop until the NULL character is reached and copied
 
         ret
+
 
     ; Removes unwanted characters, replaces tabs with whitespaces, args(QWORD NULL-terminated string pointer)    
     .format:
@@ -581,7 +551,7 @@ string:
             ._NULL_terminator:
                 mov [rbx], al  ; Place character into current shift location
                 ; fallthrough to return
-    ret
+        ret
 
 
     ; Removes leading and trailing whitespaces, args(QWORD NULL-terminated string pointer) 
@@ -604,9 +574,7 @@ string:
         je ._find_terminator
 
             ; Shift the string to remove leading spaces
-            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-            call .copy  ; Copy the string without leading spaces 
-            add rsp, 40  ; Restore the stack
+            call_aligned .copy  ; Copy the string without leading spaces 
             mov rcx, [rsp + 8]  ; Retrieve string pointer
 
         ._find_terminator:
@@ -642,5 +610,5 @@ string:
 
 exit:
     mov  ecx, 0  ; Load exit status
-    call ExitProcess
+    call_aligned ExitProcess
     hlt
