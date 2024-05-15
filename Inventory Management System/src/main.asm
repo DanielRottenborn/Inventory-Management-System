@@ -23,7 +23,7 @@ section .rodata
 
 ; Data section
 section .data
- 
+    test_buffer3: db "----", 0
 
 ; Bss section
 sectalign 8
@@ -36,7 +36,9 @@ section .bss
         .count:         resb 4
         .capacity:      resb 4
         .member_size:   resb 4
-
+   
+    test_buffer1: resb 64
+    test_buffer2: resb 64
 
 ; Text section
 section .text
@@ -44,7 +46,63 @@ section .text
 
 ; Entry point for the CONSOLE subsystem 
 mainCRTStartup:
+    lea rcx, [test_buffer1]
+    sub rsp, 40
+    call console.read_string
+    add rsp, 40
+
+    lea rcx, [test_buffer1]
+    sub rsp, 40
+    call .test_print
+    add rsp, 40
+
+    lea rcx, [test_buffer3]
+    sub rsp, 40
+    call .test_print
+    add rsp, 40
+
+    lea rcx, [test_buffer2]
+    sub rsp, 40
+    call console.read_string
+    add rsp, 40
+
+    lea rcx, [test_buffer2]
+    sub rsp, 40
+    call .test_print
+    add rsp, 40
+
+    lea rcx, [test_buffer3]
+    sub rsp, 40
+    call .test_print
+    add rsp, 40
+
     jmp exit
+
+    extern WriteConsoleA
+    .test_print:
+            mov [rsp + 8], rcx
+
+            mov ecx, -11
+            sub rsp, 40
+            call GetStdHandle
+            add rsp, 40
+
+            mov rcx, rax
+            mov rdx, [rsp + 8]
+            mov r8d, 1
+            mov r9, 0
+            sub rsp, 40
+            mov QWORD [rsp - 8], 0
+            call WriteConsoleA
+            add rsp, 40
+
+            mov rcx, [rsp + 8]
+            mov rdx, rcx
+            inc rcx
+            
+            cmp BYTE [rdx], 0
+            jne .test_print
+        ret
 
 
 ; Copies memory from one location to another, args(QWORD destination pointer, QWORD source pointer, QWORD bytes amount)
@@ -328,6 +386,32 @@ dynamic_array:
 
 ; Console IO functionality
 console:
+    ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, and trims the string
+    .read_string:
+        ; Save arguments
+        mov [rsp + 8], rcx  ; Save destination buffer pointer in shadow space
+
+        ; Read raw input string
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call ._read_raw  ; Reads unformatted string
+        add rsp, 40  ; Restore the stack
+        mov [rsp + 16], rax  ; Save ._read_raw return value
+
+        ; Format the string
+        mov rcx, [rsp + 8]  ; Retrieve the buffer pointer
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call string.format  ; Formats the string
+        add rsp, 40  ; Restore the stack
+
+        ; Trim the string
+        mov rcx, [rsp + 8]  ; Retrieve the buffer pointer
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call string.trim  ; Trims the string
+        add rsp, 40  ; Restore the stack
+
+        mov rax, [rsp + 16]  ; Restore the ._read_raw return value
+        ret
+
 
     ;Reads up to 63 ANSI characters from console input without formatting, null-terminates the resulting string, 
     ;Flushes the input buffer, Returns 0 if input string length exceeds 63 characters, args(QWORD destination 64-byte buffer pointer)
@@ -428,15 +512,113 @@ string:
     .copy:
         mov rax, 0  ; Set offset to 0
 
-        ._loop:
+        ._copy_loop:
             mov bl, [rdx + rax]  ; Moves a char from source + offset to bl
             mov [rcx + rax], bl  ; Moves a char from bl to destination + offset
 
             inc rax  ; Increment the offset
             cmp bl, 0
-            jne ._loop  ; Loop until the NULL character is reached and cpoied
+            jne ._copy_loop  ; Loop until the NULL character is reached and copied
 
         ret
+
+    ; Removes unwanted characters, replaces tabs with whitespaces, args(QWORD NULL-terminated string pointer)    
+    .format:
+        mov rbx, rcx  ; Initialize character shift location to string pointer
+
+        ; Itterate through all characters
+        ._format_loop:
+            mov al, [rcx]  ; Get current character
+
+            cmp al, 9  ; Check if current character is a tab character
+            je ._tab_character
+
+            cmp al, 0  ; Check if current character is a NULL terminator
+            je ._NULL_terminator
+
+            cmp al, 16  ; Check if current character is otherwise invalid
+            jle ._invalid_character
+
+            cmp al, 127  ; Check if current character is invalid
+            jge ._invalid_character
+
+                ;Shift a valid character otherwise
+                mov [rbx], al  ; Place current character into current shift location
+                inc rcx  ; Increment character pointer
+                inc rbx  ; Increment shift location
+                jmp ._format_loop  ; Continue itteration
+
+            ._invalid_character:
+                inc rcx  ; Only increment character pointer to replace the current character in next itteration
+                jmp ._format_loop  ; Continue itteration
+
+            ._tab_character:
+                mov BYTE [rbx], ' '  ; Place a whitespace character into current shift location
+                inc rcx  ; Increment character pointer
+                inc rbx  ; Increment shift location
+                jmp ._format_loop  ; Continue itteration
+
+            ._NULL_terminator:
+                mov [rbx], al  ; Place character into current shift location
+                ; fallthrough to return
+    ret
+
+
+    ; Removes leading and trailing whitespaces, args(QWORD NULL-terminated string pointer) 
+    .trim:
+        ; Save arguments
+        mov [rsp + 8], rcx  ; Save string pointer in shadow space
+
+        mov rdx, rcx  ; Set up offset pointer
+
+        ; Search for the first non-whitespace character
+        ._find_leading_loop:
+            cmp BYTE [rdx], ' '
+            jne ._end_find_leading_loop  ; Break if current character is not a whitespace character
+            inc rdx  ; Increment offset pointer
+            jmp ._find_leading_loop  ; Continue itteration
+
+        ._end_find_leading_loop:
+
+        cmp rdx, rcx  ; Skip shifting if there are no leading whitespace characters
+        je ._find_terminator
+
+            ; Shift the string to remove leading spaces
+            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+            call .copy  ; Copy the string without leading spaces 
+            add rsp, 40  ; Restore the stack
+            mov rcx, [rsp + 8]  ; Retrieve string pointer
+
+        ._find_terminator:
+        mov rdx, rcx  ; Set up current character pointer
+        
+        ; Search for the terminator character
+        ._find_terminator_loop:
+            cmp BYTE [rdx], 0
+            je ._end_find_terminator_loop  ; Break if current character is a NULL terminator         
+            inc rdx  ; Increment character pointer
+            jmp ._find_terminator_loop  ; Continue itteration
+
+        ._end_find_terminator_loop:
+
+        dec rdx  ; Get the last non-NULL character
+
+        ; Remove trailing whitespaces
+        ._remove_trailing_loop:
+            cmp rdx, rcx
+            jl ._end_remove_trailing_loop  ; Break if current character pointer is below the string pointer
+
+            cmp BYTE [rdx], ' '
+            jne ._end_remove_trailing_loop  ; Break if current character is not a whitespace
+
+            mov BYTE [rdx], 0  ; Replace current character with NULL otherwise
+            dec rdx  ; Decrement current character pointer
+            jmp ._remove_trailing_loop  ; Continue itteration
+
+        ._end_remove_trailing_loop:
+
+        ret
+
 
 exit:
     mov  ecx, 0  ; Load exit status
