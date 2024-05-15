@@ -23,86 +23,27 @@ section .rodata
 
 ; Data section
 section .data
-    test_buffer3: db "----", 0
+
 
 ; Bss section
 sectalign 8
 section .bss
 
-    ; A dynamic array to store item information
-    alignb 8 
-    item_array:
-        .address:       resb 8
-        .count:         resb 4
-        .capacity:      resb 4
-        .member_size:   resb 4
-   
-    test_buffer1: resb 64
-    test_buffer2: resb 64
+; A dynamic array to store item information
+alignb 8 
+item_array:
+    .address:       resb 8
+    .count:         resb 4
+    .capacity:      resb 4
+    .member_size:   resb 4
+
 
 ; Text section
 section .text
 
-
 ; Entry point for the CONSOLE subsystem 
 mainCRTStartup:
-    lea rcx, [test_buffer1]
-    sub rsp, 40
-    call console.read_string
-    add rsp, 40
-
-    lea rcx, [test_buffer1]
-    sub rsp, 40
-    call .test_print
-    add rsp, 40
-
-    lea rcx, [test_buffer3]
-    sub rsp, 40
-    call .test_print
-    add rsp, 40
-
-    lea rcx, [test_buffer2]
-    sub rsp, 40
-    call console.read_string
-    add rsp, 40
-
-    lea rcx, [test_buffer2]
-    sub rsp, 40
-    call .test_print
-    add rsp, 40
-
-    lea rcx, [test_buffer3]
-    sub rsp, 40
-    call .test_print
-    add rsp, 40
-
     jmp exit
-
-    extern WriteConsoleA
-    .test_print:
-            mov [rsp + 8], rcx
-
-            mov ecx, -11
-            sub rsp, 40
-            call GetStdHandle
-            add rsp, 40
-
-            mov rcx, rax
-            mov rdx, [rsp + 8]
-            mov r8d, 1
-            mov r9, 0
-            sub rsp, 40
-            mov QWORD [rsp - 8], 0
-            call WriteConsoleA
-            add rsp, 40
-
-            mov rcx, [rsp + 8]
-            mov rdx, rcx
-            inc rcx
-            
-            cmp BYTE [rdx], 0
-            jne .test_print
-        ret
 
 
 ; Copies memory from one location to another, args(QWORD destination pointer, QWORD source pointer, QWORD bytes amount)
