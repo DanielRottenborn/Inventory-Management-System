@@ -9,7 +9,7 @@ extern HeapFree  ; Heap memory release
 
 extern GetStdHandle  ; Returns standard console handles
 extern ReadConsoleA  ; Reads ANSI characters from standard input
-extern FlushConsoleInputBuffer  ; Flushes input buffer
+extern WriteConsoleA  ; Writes ANSI characters to standard output
 
 extern ExitProcess  ; Win32 API exit procedure
 
@@ -17,8 +17,21 @@ extern ExitProcess  ; Win32 API exit procedure
 global mainCRTStartup  ; Entry point for the CONSOLE subsystem
 
 
+ESC equ 27  ; Escape character
+LF equ 10  ; Newline character
+NULL equ 0  ; NULL
+
+%define REGULAR_COLOR ESC, "[0m"  ; Resets text color
+%define WARNING_COLOR ESC, "[93m"  ; Changes text color to bright yellow
+%define ERROR_COLOR ESC, "[91m"  ; Changes text color to bright red
+
+
 ; Rodata section
 section .rodata
+messages:
+    .input_too_large: db WARNING_COLOR, "Input length exceeds 63 characters, string will be trimmed.", REGULAR_COLOR, LF, NULL
+    .memory_error: db ERROR_COLOR,"An error occured while managing heap memory.", REGULAR_COLOR, LF, NULL
+    .input_error: db ERROR_COLOR,"An error occured while reading input.", REGULAR_COLOR, LF, NULL
 
 
 ; Data section
@@ -322,11 +335,61 @@ dynamic_array:
 
 
     ._memory_error:
+        lea rcx, [messages.memory_error]  ; Notify the user that an error occured while managing heap memory
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call console.print_string  ; Print error message
+        add rsp, 40  ; Restore the stack
+
         jmp exit
 
 
 ; Console IO functionality
 console:
+
+    ; Prints a NULL-terminated string, args(QWORD string pointer)
+    .print_string:
+        ; Save arguments
+        mov [rsp + 8], rcx  ; Save string pointer in shadow space
+
+        ; Initialize current character pointer
+        mov rdx, rcx
+
+        ; Search for the terminator character
+        ._print_find_terminator_loop:
+            cmp BYTE [rdx], 0
+            je ._end_print_find_terminator_loop  ; Break if current character is a NULL terminator         
+            inc rdx  ; Increment character pointer
+            jmp ._print_find_terminator_loop  ; Continue itteration
+
+        ._end_print_find_terminator_loop:
+
+        ; Calculate string length
+        sub rdx, rcx
+        mov [rsp + 16], rdx  ; Save string length in shadow space
+
+        ; Get output handle
+        mov ecx, -11  ; Set to -11 to receive an output handle
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call GetStdHandle  ; Returns standard output handle
+        add rsp, 40  ; Restore the stack
+
+        ; Write to standard output
+        mov rcx, rax  ; Set output handle
+        mov rdx, [rsp + 8]  ; Retrieve string pointer
+        mov r8d, [rsp + 16]  ; Retrieve string length
+        lea r9, [rsp + 24]  ; The procedure will save the number of characters it will have written in shadow space
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        mov QWORD [rsp], 0  ; Reserved NULL parameter
+        call WriteConsoleA  ; Writes to the console
+        add rsp, 40  ; Restore the stack
+
+        ; Check for errors (zero return)
+        cmp eax, 0
+        je ._output_error
+
+        ret
+
+
     ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, and trims the string
     .read_string:
         ; Save arguments
@@ -350,7 +413,16 @@ console:
         call string.trim  ; Trims the string
         add rsp, 40  ; Restore the stack
 
-        mov rax, [rsp + 16]  ; Restore the ._read_raw return value
+        cmp QWORD [rsp + 16], 0  ; Check if input size was larger than max supported input length
+        jne ._end_read_string  ; Skip warning if it wasn't
+
+            lea rcx, [messages.input_too_large]  ; Notify the user that input string will be trimmed
+            sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+            call .print_string  ; Print warning message
+            add rsp, 40  ; Restore the stack
+
+        ._end_read_string:
+
         ret
 
 
@@ -380,7 +452,7 @@ console:
 
         ; Check for errors (zero return)
         cmp eax, 0
-        je ._console_error
+        je ._input_error
 
         ; NULL-terminate the string
         mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
@@ -409,7 +481,7 @@ console:
             ._flush_buffer:
                 ; Check if there might be more unread characters
                 mov cl, [rsp + 65] ; Load the last character from the discard buffer
-                cmp cl, 10
+                cmp cl, LF
                 je ._end_flush_buffer  ; Stop flushing if the last character read is a newline character
                 mov ecx, [rsp + 16 + 80]  ; Load the number of characters the ReadConsole procedure has previously read
                 cmp ecx, 66  ; Compare against discard buffer size
@@ -427,7 +499,7 @@ console:
 
                 ; Check for errors (zero return)
                 cmp eax, 0
-                je ._console_error
+                je ._input_error
 
                 jmp ._flush_buffer  ; Continue flushing
 
@@ -442,9 +514,16 @@ console:
             mov rax, 1  ; Return non-zero value if the whole input was read
             ret
 
-    ._console_error:
+    ._input_error:
+        lea rcx, [messages.input_error]  ; Notify the user that an error occured while reading input
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        call .print_string  ; Print error message
+        add rsp, 40  ; Restore the stack
+
         jmp exit
 
+    ._output_error:
+        jmp exit
 
 ; String manipulation
 string:
