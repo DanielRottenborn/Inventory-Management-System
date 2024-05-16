@@ -21,6 +21,11 @@ ESC equ 27  ; Escape character
 LF equ 10  ; Newline character
 NULL equ 0  ; NULL
 
+ARRAY_COUNT_OFFSET equ 8  ; Offset to the array count parameter
+ARRAY_CAPACITY_OFFSET equ 12  ; Offset to the array capacity parameter
+ARRAY_MEMBER_SIZE_OFFSET equ 16  ; Offset to the array member size parameter
+
+
 %define REGULAR_COLOR ESC, "[0m"  ; Resets text color
 %define WARNING_COLOR ESC, "[93m"  ; Changes text color to bright yellow
 %define ERROR_COLOR ESC, "[38;2;255;145;65m"  ; Changes text color to bright orange
@@ -44,6 +49,9 @@ messages:
 
     .memory_error: db FATAL_ERROR_COLOR,"An error occured while managing heap memory.", REGULAR_COLOR, LF, NULL
     .input_error: db FATAL_ERROR_COLOR,"An error occured while reading input.", REGULAR_COLOR, LF, NULL
+
+control:
+    .clear_screen: db ESC, "[1;1H",  ESC, "[2J", ESC, "[3J", NULL  ; Resets cursor position and clears the screen
 
 
 ; Data section
@@ -106,7 +114,7 @@ dynamic_array:
         call_aligned GetProcessHeap
 
         ; Check for errors (NULL return)
-        cmp rax, 0
+        cmp rax, NULL
         je ._memory_error
 
         ; Allocate memory
@@ -118,16 +126,16 @@ dynamic_array:
         call_aligned HeapAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
-        cmp rax, 0
+        cmp rax, NULL
         je ._memory_error
 
         ; Modify array struct
         mov rcx, [rsp +  8]  ; Retrieve array struct pointer
         mov edx, [rsp + 16]  ; Retrieve member size
         mov [rcx], rax  ; Update allocated memory pointer
-        mov DWORD [rcx + 8], 0  ; Update initial member count
-        mov DWORD [rcx + 12], 10  ; Update capacity
-        mov [rcx + 16], edx  ; Update member size
+        mov DWORD [rcx + ARRAY_COUNT_OFFSET], 0  ; Update initial member count
+        mov DWORD [rcx + ARRAY_CAPACITY_OFFSET], 10  ; Update capacity
+        mov [rcx + ARRAY_MEMBER_SIZE_OFFSET], edx  ; Update member size
 
         ret
 
@@ -139,12 +147,12 @@ dynamic_array:
         mov [rsp + 16], rdx  ; Save new member pointer in shadow space
 
         ; Check capacity
-        mov eax, [rcx + 8]  ; Load member count value
-        cmp eax, [rcx + 12]  ; Compare against capacity
+        mov eax, [rcx + ARRAY_COUNT_OFFSET]  ; Load member count value
+        cmp eax, [rcx + ARRAY_CAPACITY_OFFSET]  ; Compare against capacity
         jb ._push  ; Skip reallocation if the array is not yet full
 
             ; Increase capacity
-            mov edx, [rcx + 12]  ; Load current array capacity as an argument
+            mov edx, [rcx + ARRAY_CAPACITY_OFFSET]  ; Load current array capacity as an argument
             add edx, edx  ; Double it
             call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
 
@@ -152,18 +160,18 @@ dynamic_array:
 
         ; Get offset to place a new member
         mov rcx, [rsp + 8]  ; Retrieve array struct pointer
-        mov edx, [rcx + 8]  ; Get member count
+        mov edx, [rcx + ARRAY_COUNT_OFFSET]  ; Get member count
         call_aligned .get  ; Get pointer to the next available member location
 
         ; Push new member to the array and increment member count
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
         mov rcx, rax  ; Set destination argument
         mov rdx, [rsp + 16]  ; Retrieve new member pointer to use as a source argument
-        mov r8d, [rbx + 16]  ; Get member size
+        mov r8d, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
 
-        mov eax, [rbx + 8]  ; Get member count
+        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
         inc eax  ; Increment member count
-        mov [rbx + 8], eax  ; Update member count
+        mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
 
         call_aligned mem_copy  ; Copy new member to the end of the array
 
@@ -174,7 +182,7 @@ dynamic_array:
     .get:
         ; Do pointer arithmetic
         mov eax, edx  ; Get index
-        mov ebx, [rcx + 16]  ; Get member size
+        mov ebx, [rcx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
         mul rbx  ; Get offset
         add rax, [rcx]  ; Add array base pointer to offset
 
@@ -192,11 +200,11 @@ dynamic_array:
 
         ; Set up destination argument
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
-        mov r9d, [rbx + 16]  ; Get member size
+        mov r9d, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
         mov rcx, rax  ; Set destingation pointer
 
         ; Calculate memory block size to be shifted
-        mov eax, [rbx + 8]  ; Get member count
+        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
         mov r8d, [rsp + 16]  ; Retrieve element index
         add r8d, 1  ; Get next element index
         sub eax, r8d  ; Get the number of members to be shifted
@@ -212,18 +220,18 @@ dynamic_array:
 
         ; Decrement member count
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
-        mov eax, [rbx + 8]  ; Get member count
+        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
         dec eax
-        mov [rbx + 8], eax  ; Update member count
+        mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
 
         ; Check if the capacity of the array needs to be decreased
-        mov eax, [rbx + 12]  ; Get current capacity
+        mov eax, [rbx + ARRAY_CAPACITY_OFFSET]  ; Get current capacity
         mov rdx, 0  ; Set rdx to 0 for division
         mov ecx, 4  ; Set the divisor
         div rcx  ; Divide current capacity by 4
 
         ; Compare against member count
-        cmp eax, [rbx + 8] 
+        cmp eax, [rbx + ARRAY_COUNT_OFFSET] 
         jbe ._end_remove  ; Skip reallocation if new capacity is less than or equal to member count
 
         ; Compare new capacity against min capacity
@@ -243,10 +251,10 @@ dynamic_array:
     ; Clears the array, args(QWORD array struct pointer)
     .clear:
         ; Reset member count
-        mov DWORD [rcx + 8], 0
+        mov DWORD [rcx + ARRAY_COUNT_OFFSET], 0
 
         ; Check cucrent capacity
-        mov ebx, [rcx + 12]  ; Load capacity
+        mov ebx, [rcx + ARRAY_CAPACITY_OFFSET]  ; Load capacity
         cmp ebx, 10  ; Compare against min capacity
         jbe ._end_clear  ; Skip reallocation if capacity is minimal
 
@@ -268,7 +276,7 @@ dynamic_array:
         call_aligned GetProcessHeap
 
         ; Check for errors (NULL return)
-        cmp rax, 0
+        cmp rax, NULL
         je ._memory_error
 
         ; Free memory
@@ -279,7 +287,7 @@ dynamic_array:
         call_aligned HeapFree  ; Releases memory
 
         ; Check for errors (NULL return)
-        cmp rax, 0
+        cmp rax, NULL
         je ._memory_error
 
         ret
@@ -295,13 +303,13 @@ dynamic_array:
         call_aligned GetProcessHeap
 
         ; Check for errors (NULL return)
-        cmp rax, 0
+        cmp rax, NULL
         je ._memory_error
 
         ; Reallocate memory
         mov rbx, [rsp + 8]  ; Retrieve array struct pointer
         mov rcx, rax  ; Use the handle as a first argument
-        mov edx, [rbx + 16]  ; Get member size
+        mov edx, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
         mov eax, [rsp + 16]  ; Retrieve new capacity
         mul rdx  ; Multiply by member size (affects rdx)
         mov r9, rax  ; Resulting number of bytes to reallocate
@@ -310,14 +318,14 @@ dynamic_array:
         call_aligned HeapReAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
-        cmp rax, 0
+        cmp rax, NULL
         je ._memory_error
 
         ; Modify array struct
         mov rcx, [rsp +  8]  ; Retrieve array struct pointer
         mov edx, [rsp + 16]  ; Retrieve new capacity
         mov [rcx], rax  ; Update allocated memory pointer
-        mov [rcx + 12], edx  ; Update capacity
+        mov [rcx + ARRAY_CAPACITY_OFFSET], edx  ; Update capacity
 
         ret
 
@@ -368,12 +376,12 @@ console:
         mov r8d, 10  ; Print 10 characters
         lea r9, [rsp + 16 + 32]  ; The procedure will save the number of characters it will have written in shadow space
         sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        mov QWORD [rsp], 0  ; Reserved NULL parameter
+        mov QWORD [rsp], NULL  ; Reserved NULL parameter
         call WriteConsoleA  ; Writes to the console
         add rsp, 40  ; Restore the stack
 
         ; Check for errors (zero return)
-        cmp eax, 0
+        cmp eax, NULL
         je ._output_error
 
         add rsp, 32  ; Restore the stack
@@ -389,7 +397,7 @@ console:
 
         ; Search for the terminator character
         ._print_find_terminator_loop:
-            cmp BYTE [rdx], 0
+            cmp BYTE [rdx], NULL
             je ._end_print_find_terminator_loop  ; Break if current character is a NULL terminator         
             inc rdx  ; Increment character pointer
             jmp ._print_find_terminator_loop  ; Continue itteration
@@ -410,12 +418,12 @@ console:
         mov r8d, [rsp + 16]  ; Retrieve string length
         lea r9, [rsp + 24]  ; The procedure will save the number of characters it will have written in shadow space
         sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        mov QWORD [rsp], 0  ; Reserved NULL parameter
+        mov QWORD [rsp], NULL  ; Reserved NULL parameter
         call WriteConsoleA  ; Writes to the console
         add rsp, 40  ; Restore the stack
 
         ; Check for errors (zero return)
-        cmp eax, 0
+        cmp eax, NULL
         je ._output_error
 
         ret
@@ -533,12 +541,12 @@ console:
         mov r8d, 66  ; Read 63 characters + CR + LF + another character to see if input is greater tan 63 characters
         lea r9, [rsp + 16 + 80]  ; The procedure will save the number of characters it will have read in shadow space
         sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-        mov QWORD [rsp], 0  ; Input control argument should be NULL for ANSI mode
+        mov QWORD [rsp], NULL  ; Input control argument should be NULL for ANSI mode
         call ReadConsoleA  ; Reads input
         add rsp, 40  ; Restore the stack
 
         ; Check for errors (zero return)
-        cmp eax, 0
+        cmp eax, NULL
         je ._input_error
 
         ; NULL-terminate the string
@@ -548,7 +556,7 @@ console:
         shr rdx, 6  ; If input string length was more than 63 characters,
         sub rcx, rdx  ; Substract one to get proper offset
         add rcx, rsp  ; Add the base address of the temporary buffer
-        mov BYTE [rcx], 0 ; Set the CR character to NULL
+        mov BYTE [rcx], NULL ; Set the CR character to NULL
 
         ; Copy the string to the destination
         mov rcx, [rsp + 8 + 80]  ; Retrieve the destination buffer pointer
@@ -576,12 +584,12 @@ console:
                 mov r8d, 66  ; Read 66 characters
                 lea r9, [rsp + 16 + 80]  ; The procedure will save the number of characters it will have read in shadow space
                 sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
-                mov QWORD [rsp], 0  ; Input control argument should be NULL for ANSI mode
+                mov QWORD [rsp], NULL  ; Input control argument should be NULL for ANSI mode
                 call ReadConsoleA  ; Reads and flushes 64 characters
                 add rsp, 40  ; Restore the stack
 
                 ; Check for errors (zero return)
-                cmp eax, 0
+                cmp eax, NULL
                 je ._input_error
 
                 jmp ._flush_buffer  ; Continue flushing
@@ -622,7 +630,7 @@ string:
             mov [rcx + rax], bl  ; Moves a char from bl to destination + offset
 
             inc rax  ; Increment the offset
-            cmp bl, 0
+            cmp bl, NULL
             jne ._copy_loop  ; Loop until the NULL character is reached and copied
 
         ret
@@ -639,7 +647,7 @@ string:
             cmp al, 9  ; Check if current character is a tab character
             je ._tab_character
 
-            cmp al, 0  ; Check if current character is a NULL terminator
+            cmp al, NULL  ; Check if current character is a NULL terminator
             je ._NULL_terminator
 
             cmp al, 16  ; Check if current character is otherwise invalid
@@ -698,7 +706,7 @@ string:
         
         ; Search for the terminator character
         ._find_terminator_loop:
-            cmp BYTE [rdx], 0
+            cmp BYTE [rdx], NULL
             je ._end_find_terminator_loop  ; Break if current character is a NULL terminator         
             inc rdx  ; Increment character pointer
             jmp ._find_terminator_loop  ; Continue itteration
@@ -715,7 +723,7 @@ string:
             cmp BYTE [rdx], ' '
             jne ._end_remove_trailing_loop  ; Break if current character is not a whitespace
 
-            mov BYTE [rdx], 0  ; Replace current character with NULL otherwise
+            mov BYTE [rdx], NULL  ; Replace current character with NULL otherwise
             dec rdx  ; Decrement current character pointer
             jmp ._remove_trailing_loop  ; Continue itteration
 
