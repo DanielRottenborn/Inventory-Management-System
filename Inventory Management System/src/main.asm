@@ -71,6 +71,7 @@ mainCRTStartup:
     jmp exit
 
 
+
 ; Copies memory from one location to another, args(QWORD destination pointer, QWORD source pointer, QWORD bytes amount)
 mem_copy:
     mov rax, 0  ; Set offset to 0
@@ -88,6 +89,7 @@ mem_copy:
     ._loop_end:
 
     ret
+
 
 
 ; Dynamic array functionality
@@ -327,8 +329,55 @@ dynamic_array:
         jmp exit
 
 
+
 ; Console IO functionality
 console:
+
+    ; Prints a space-padded integer, args(DWORD unsigned integer)
+    .print_int:
+        sub rsp, 32  ; Reserve space for a temporary buffer
+
+        mov eax, ecx  ; Move argument to the divident register
+        mov ecx, 10  ; Use ecx register as a divisor
+
+        lea rbx, [rsp + 15]  ; Initialize character pointer to the least significant digit position
+        mov DWORD [rsp + 16], 0x20202020  ;Fill padding with whitespaces
+        mov DWORD [rsp + 20], 0x20202020
+        mov BYTE  [rsp + 24], 0x20
+
+        ._convert_digits_loop:
+            mov edx, 0  ; Reset edx for division
+            div ecx  ; Divide remaining number by ten
+            add dl, 48  ; Convert the remainder to ASCII digit
+            mov [rbx], dl  ; Write it to the buffer
+            dec rbx  ; Decrement the character pointer
+
+            cmp eax, 0
+            jne ._convert_digits_loop  ; Break if all digits have been processed
+
+        inc rbx  ; Correct the resulting string pointer after itteration   
+        mov [rsp + 8 + 32], rbx  ; Save string pointer in shadow space 
+
+        ; Get output handle
+        mov ecx, -11  ; Set to -11 to receive an output handle
+        call_aligned GetStdHandle  ; Returns standard output handle
+
+        ; Write to standard output
+        mov rcx, rax  ; Set output handle
+        mov rdx, [rsp + 8 + 32]  ; Retrieve string pointer
+        mov r8d, 10  ; Print 10 characters
+        lea r9, [rsp + 16 + 32]  ; The procedure will save the number of characters it will have written in shadow space
+        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        mov QWORD [rsp], 0  ; Reserved NULL parameter
+        call WriteConsoleA  ; Writes to the console
+        add rsp, 40  ; Restore the stack
+
+        ; Check for errors (zero return)
+        cmp eax, 0
+        je ._output_error
+
+        add rsp, 32  ; Restore the stack
+        ret
 
     ; Prints a NULL-terminated string, args(QWORD string pointer)
     .print_string:
@@ -560,6 +609,7 @@ console:
         jmp exit
 
 
+
 ; String manipulation
 string:
 
@@ -672,6 +722,7 @@ string:
         ._end_remove_trailing_loop:
 
         ret
+
 
 
 exit:
