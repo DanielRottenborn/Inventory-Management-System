@@ -23,7 +23,8 @@ NULL equ 0  ; NULL
 
 %define REGULAR_COLOR ESC, "[0m"  ; Resets text color
 %define WARNING_COLOR ESC, "[93m"  ; Changes text color to bright yellow
-%define ERROR_COLOR ESC, "[91m"  ; Changes text color to bright red
+%define ERROR_COLOR ESC, "[38;2;255;145;65m"  ; Changes text color to bright orange
+%define FATAL_ERROR_COLOR ESC, "[91m"  ; Changes text color to bright red
 
 
 %macro call_aligned 1  ; Alligns the stack for procedure calls
@@ -37,10 +38,12 @@ NULL equ 0  ; NULL
 ; Rodata section
 section .rodata
 messages:
-    .input_too_large: db WARNING_COLOR, "Input length exceeds 63 characters, string will be trimmed.", REGULAR_COLOR, LF, NULL
+    .input_too_large: db WARNING_COLOR, "Input is too large and will be clipped.", REGULAR_COLOR, LF, NULL
+    .integer_too_large: db WARNING_COLOR, "Entered number is too large and will be clamped.", REGULAR_COLOR, LF, NULL
+    .integer_parse_failed: db ERROR_COLOR, "Failed to read a number, try again: ", REGULAR_COLOR, NULL
 
-    .memory_error: db ERROR_COLOR,"An error occured while managing heap memory.", REGULAR_COLOR, LF, NULL
-    .input_error: db ERROR_COLOR,"An error occured while reading input.", REGULAR_COLOR, LF, NULL
+    .memory_error: db FATAL_ERROR_COLOR,"An error occured while managing heap memory.", REGULAR_COLOR, LF, NULL
+    .input_error: db FATAL_ERROR_COLOR,"An error occured while reading input.", REGULAR_COLOR, LF, NULL
 
 
 ; Data section
@@ -369,8 +372,73 @@ console:
         ret
 
 
-    ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, trims the string,
-    ;And displays a warning message in case input exceeds max length
+    ;Uses the read_string procedure and then parses and returns a 32-bit integer
+    ;Displays a warning message in case input is larger than max unsigned 32-bit integer and returns max int instead
+    ;Displays a warning message in case input cant be parsed and prompts user again
+    .read_int:
+        ; Read formatted input string
+        sub rsp, 64  ; Reserve space for a temporary buffer
+        lea rcx, [rsp]  ; Set destination buffer
+        call_aligned .read_string  ; Read formatted input
+
+        ; Parse an integer
+        mov eax, 0  ; Initialize return value
+        lea rbx, [rsp]  ; Initialize character pointer
+
+        ; Itterate through characters
+        ._parse_digits_loop:
+            
+            ;Check if current character is a digit, stop itteration if it isn't
+            cmp BYTE [rbx], 48
+            jl ._end_parse_digits_loop
+
+            cmp BYTE [rbx], 57
+            jg ._end_parse_digits_loop
+
+            mov ecx, 10
+            mul ecx  ; 'Shift' previous digits right by 1
+
+            mov ecx, 0       
+            mov cl, [rbx]  ; Load current character
+            sub cl, 48  ; Substract ASCII digit offset
+            inc rbx  ; Increment character pointer
+
+            add eax, ecx  ; Add current digit
+            jc ._int_overflow  ; Check for addition overflow 
+            
+            cmp edx, 0
+            je ._parse_digits_loop  ; Check for multiplication overflow
+
+            ._int_overflow:
+                ; Display a warning if an overflow has occured
+                lea rcx, [messages.integer_too_large]
+                call_aligned .print_string
+
+                mov eax, -1
+                jmp ._end_read_int  ; Load max int as a return value and end the procedure 
+   
+        ._end_parse_digits_loop:
+
+        ; Verify if at least one digit was parsed, display a warning message and prompt user again otherwise
+        cmp rbx, rsp
+        jne ._end_read_int
+
+            ; Display a warning otherwise
+            lea rcx, [messages.integer_parse_failed]
+            call_aligned .print_string
+            
+            ;Prompt user again
+            add rsp, 64  ; Restore the stack
+            jmp .read_int
+
+        ._end_read_int:
+        
+        add rsp, 64  ; Restore the stack
+        ret
+
+
+    ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, trims the string
+    ;Displays a warning message in case input exceeds max length
     .read_string:
         ; Save arguments
         mov [rsp + 8], rcx  ; Save destination buffer pointer in shadow space
@@ -427,6 +495,9 @@ console:
         ; NULL-terminate the string
         mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
         sub rcx, 2  ; Get the offset to CR character
+        mov rdx, rcx
+        shr rdx, 6  ; If input string length was more than 63 characters,
+        sub rcx, rdx  ; Substract one to get proper offset
         add rcx, rsp  ; Add the base address of the temporary buffer
         mov BYTE [rcx], 0 ; Set the CR character to NULL
 
@@ -439,11 +510,6 @@ console:
         mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
         cmp ecx, 65  ; Compare against max length + CR + LF
         jle ._end_read_raw  ; Return if string length did not exceed max length
-
-            ; NULL-terminate the resulting string again if string length exceeds max length
-            mov rcx, [rsp + 8 + 80]  ; Retrieve the destination buffer pointer
-            add rcx, 63  ; Get the pointer to the last character
-            mov BYTE [rcx], 0 ; Set the last character to NULL
 
             ; Flushing remaining input characters
             ._flush_buffer:
