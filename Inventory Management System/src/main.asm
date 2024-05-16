@@ -77,7 +77,7 @@ mem_copy:
 
     ._loop:
         cmp rax, r8
-        jge ._loop_end  ; Loop until the offset is equal to the amount
+        jae ._loop_end  ; Loop until the offset is equal to the amount
 
         mov bl, [rdx + rax]  ; Moves a byte from source + offset to bl
         mov [rcx + rax], bl  ; Moves a byte from bl to destination + offset
@@ -139,7 +139,7 @@ dynamic_array:
         ; Check capacity
         mov eax, [rcx + 8]  ; Load member count value
         cmp eax, [rcx + 12]  ; Compare against capacity
-        jl ._push  ; Skip reallocation if the array is not yet full
+        jb ._push  ; Skip reallocation if the array is not yet full
 
             ; Increase capacity
             mov edx, [rcx + 12]  ; Load current array capacity as an argument
@@ -222,11 +222,11 @@ dynamic_array:
 
         ; Compare against member count
         cmp eax, [rbx + 8] 
-        jle ._end_remove  ; Skip reallocation if new capacity is less than or equal to member count
+        jbe ._end_remove  ; Skip reallocation if new capacity is less than or equal to member count
 
         ; Compare new capacity against min capacity
         cmp eax, 10
-        jl ._end_remove  ; Skip reallocation if new capacity is less than min capacity
+        jb ._end_remove  ; Skip reallocation if new capacity is less than min capacity
 
             ; Decrease capacity
             mov rcx, rbx  ; Array struct pointer argument
@@ -246,7 +246,7 @@ dynamic_array:
         ; Check cucrent capacity
         mov ebx, [rcx + 12]  ; Load capacity
         cmp ebx, 10  ; Compare against min capacity
-        jle ._end_clear  ; Skip reallocation if capacity is minimal
+        jbe ._end_clear  ; Skip reallocation if capacity is minimal
 
             ; Set min capacity
             mov edx, 10  ; set min capacity as an argument
@@ -390,10 +390,10 @@ console:
             
             ;Check if current character is a digit, stop itteration if it isn't
             cmp BYTE [rbx], 48
-            jl ._end_parse_digits_loop
+            jb ._end_parse_digits_loop
 
             cmp BYTE [rbx], 57
-            jg ._end_parse_digits_loop
+            ja ._end_parse_digits_loop
 
             mov ecx, 10
             mul ecx  ; 'Shift' previous digits right by 1
@@ -509,7 +509,7 @@ console:
         ; Check if input string length did not exceed 63 characters
         mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
         cmp ecx, 65  ; Compare against max length + CR + LF
-        jle ._end_read_raw  ; Return if string length did not exceed max length
+        jbe ._end_read_raw  ; Return if string length did not exceed max length
 
             ; Flushing remaining input characters
             ._flush_buffer:
@@ -519,7 +519,7 @@ console:
                 je ._end_flush_buffer  ; Stop flushing if the last character read is a newline character
                 mov ecx, [rsp + 16 + 80]  ; Load the number of characters the ReadConsole procedure has previously read
                 cmp ecx, 66  ; Compare against discard buffer size
-                jl ._end_flush_buffer  ; Stop flushing if the procedure has read less than 64 characters
+                jb ._end_flush_buffer  ; Stop flushing if the procedure has read less than 64 characters
 
                 ; Read remaining characters from standard input
                 mov rcx, [rsp + 24 + 80]  ; Retrieve standard input handle
@@ -593,10 +593,10 @@ string:
             je ._NULL_terminator
 
             cmp al, 16  ; Check if current character is otherwise invalid
-            jle ._invalid_character
+            jbe ._invalid_character
 
             cmp al, 127  ; Check if current character is invalid
-            jge ._invalid_character
+            jae ._invalid_character
 
                 ;Shift a valid character otherwise
                 mov [rbx], al  ; Place current character into current shift location
@@ -660,7 +660,7 @@ string:
         ; Remove trailing whitespaces
         ._remove_trailing_loop:
             cmp rdx, rcx
-            jl ._end_remove_trailing_loop  ; Break if current character pointer is below the string pointer
+            jb ._end_remove_trailing_loop  ; Break if current character pointer is below the string pointer
 
             cmp BYTE [rdx], ' '
             jne ._end_remove_trailing_loop  ; Break if current character is not a whitespace
