@@ -134,7 +134,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <NASM Include="src\common.asm" />
+    <NASM Include="src\console.asm" />
+    <NASM Include="src\dynamic_array.asm" />
     <NASM Include="src\main.asm" />
+    <NASM Include="src\string.asm" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="outline.txt" />
