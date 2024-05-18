@@ -744,15 +744,77 @@ string:
         mov rax, 0  ; Initialize current character pointer to 0
 
         ; Search for NULL terminator
-        ._find_terminator_loop1:
+        ._find_terminator_loop:
             cmp BYTE [rcx + rax], NULL
-            je ._end_find_terminator_loop1  ; Break if current character is a NULL terminator         
+            je ._end_find_terminator_loop  ; Break if current character is a NULL terminator         
             inc rax  ; Increment character pointer
-            jmp ._find_terminator_loop1  ; Continue itteration
+            jmp ._find_terminator_loop  ; Continue itteration
 
-        ._end_find_terminator_loop1:
+        ._end_find_terminator_loop:
 
         ret  ; Return current char pointer (string length)
+
+
+    ; Pads a string with whitespaces up to a length of 63 characters, args(QWORD pointer to a NULL-terminated string in a 64-byte buffer)
+    .pad:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save string pointer in shadow space
+
+        ; Get pointer to the NULL-terminator
+        fast_call .len  ; Get string length
+        mov rcx, [rsp + 16]  ; Retrieve string pointer
+
+        ; Fill remaining space with shitespaces
+        ._pad_fill_loop:
+            mov BYTE [rcx + rax], ' '  ; Replace current character with a whitespace
+            inc rax  ; Increment character pointer
+
+            cmp rax, 63
+            jb ._pad_fill_loop  ; Continue itteration for all characters in buffer except the last one
+
+        ; NULL-terminate the string
+        mov BYTE [rcx + 63], NULL
+
+        add rsp, 8  ; Restore the stack
+        ret
+
+
+    ; Pads a string with whitespaces up to a length of 32 characters, shortens the string if it exceeds 32 characters in length
+    ; args(QWORD pointer to a NULL-terminated string in a 64-byte buffer)
+    .pad_short:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save string pointer in shadow space
+
+        fast_call .len  ; Get string length
+        mov rcx, [rsp + 16]  ; Retrieve string pointer
+
+        cmp rax, 32
+        ja ._shorten  ; Shorten the string if it exceeds 32 characters in length
+        je ._end_pad_short  ; End procedure if the string is exactly 32 characters long, pad with whitespaces otherwise
+
+            ._pad_short_fill_loop:
+                mov BYTE [rcx + rax], ' '  ; Replace current character with a whitespace
+                inc rax  ; Increment character pointer
+
+                cmp rax, 32
+                jb ._pad_short_fill_loop  ; Continue itteration for all characters in buffer except the last one    
+
+            jmp ._end_pad_short  ; End procedure
+
+        ._shorten:
+            mov BYTE [rcx + 29], '.'  ; Show that the string was shortened
+            mov BYTE [rcx + 30], '.'
+            mov BYTE [rcx + 31], '.'
+
+        ._end_pad_short:
+
+        ; NULL-terminate the string
+        mov BYTE [rcx + 32], NULL
+
+        add rsp, 8  ; Restore the stack
+        ret
 
 
 
