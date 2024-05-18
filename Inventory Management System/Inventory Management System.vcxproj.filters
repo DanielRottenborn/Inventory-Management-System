@@ -21,6 +21,5 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="outline.txt" />
-    <Text Include="scratch.txt" />
   </ItemGroup>
 </Project>

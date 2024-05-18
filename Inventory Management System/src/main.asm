@@ -32,10 +32,10 @@ ARRAY_MEMBER_SIZE_OFFSET equ 16  ; Offset to the array member size parameter
 %define FATAL_ERROR_COLOR ESC, "[91m"  ; Changes text color to bright red
 
 
-%macro call_aligned 1  ; Alligns the stack for procedure calls
-    sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+%macro fast_call 1  ; Reserves shadow space for __fastcall convention
+    sub rsp, 32  ; Reserve shadow space
     call %1  ; Call the procedure
-    add rsp, 40  ; Restore the stack
+    add rsp, 32  ; Restore the stack
 
 %endmacro
 
@@ -76,6 +76,7 @@ section .text
 
 ; Entry point for the CONSOLE subsystem 
 mainCRTStartup:
+    sub rsp, 8  ; Align the stack to a 16-byte boundary
     jmp exit
 
 
@@ -105,13 +106,14 @@ dynamic_array:
 
     ; Initializes a dynamic array, args(QWORD array struct pointer, DWORD member size)
     .init:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
-        mov QWORD [rsp + 16], 0  ; Initialize with 0 for convinient 64-bit multiplication
-        mov [rsp + 16], edx  ; Save member size in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save array struct pointer in shadow space
+        mov QWORD [rsp + 24], 0  ; Initialize with 0 for convinient 64-bit multiplication
+        mov [rsp + 24], edx  ; Save member size in shadow space
         
         ; Get default heap handle
-        call_aligned GetProcessHeap
+        fast_call GetProcessHeap
 
         ; Check for errors (NULL return)
         cmp rax, NULL
@@ -120,31 +122,33 @@ dynamic_array:
         ; Allocate memory
         mov rcx, rax  ; Use the handle as a first argument
         mov rax, 10 ; Initial member slot count
-        mul QWORD [rsp + 16]  ; Multiply by member size (affects rdx)
+        mul QWORD [rsp + 24]  ; Multiply by member size (affects rdx)
         mov r8, rax  ; Resulting number of bytes to allocate
         mov edx, 0  ; Allocation flags
-        call_aligned HeapAlloc  ; Returns a pointer to the allocated memory
+        fast_call HeapAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
         cmp rax, NULL
         je ._memory_error
 
         ; Modify array struct
-        mov rcx, [rsp +  8]  ; Retrieve array struct pointer
-        mov edx, [rsp + 16]  ; Retrieve member size
+        mov rcx, [rsp +  16]  ; Retrieve array struct pointer
+        mov edx, [rsp + 24]  ; Retrieve member size
         mov [rcx], rax  ; Update allocated memory pointer
         mov DWORD [rcx + ARRAY_COUNT_OFFSET], 0  ; Update initial member count
         mov DWORD [rcx + ARRAY_CAPACITY_OFFSET], 10  ; Update capacity
         mov [rcx + ARRAY_MEMBER_SIZE_OFFSET], edx  ; Update member size
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
     ; Pushes new element, args(QWORD array struct pointer, QWORD new member pointer)
     .push:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
-        mov [rsp + 16], rdx  ; Save new member pointer in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save array struct pointer in shadow space
+        mov [rsp + 24], rdx  ; Save new member pointer in shadow space
 
         ; Check capacity
         mov eax, [rcx + ARRAY_COUNT_OFFSET]  ; Load member count value
@@ -154,27 +158,28 @@ dynamic_array:
             ; Increase capacity
             mov edx, [rcx + ARRAY_CAPACITY_OFFSET]  ; Load current array capacity as an argument
             add edx, edx  ; Double it
-            call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
+            fast_call ._modify_capacity  ; Reallocates memory and updates capacity
 
         ._push:
 
         ; Get offset to place a new member
-        mov rcx, [rsp + 8]  ; Retrieve array struct pointer
+        mov rcx, [rsp + 16]  ; Retrieve array struct pointer
         mov edx, [rcx + ARRAY_COUNT_OFFSET]  ; Get member count
-        call_aligned .get  ; Get pointer to the next available member location
+        fast_call .get  ; Get pointer to the next available member location
 
         ; Push new member to the array and increment member count
-        mov rbx, [rsp + 8]  ; Retrieve array struct pointer
+        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
         mov rcx, rax  ; Set destination argument
-        mov rdx, [rsp + 16]  ; Retrieve new member pointer to use as a source argument
+        mov rdx, [rsp + 24]  ; Retrieve new member pointer to use as a source argument
         mov r8d, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
 
         mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
         inc eax  ; Increment member count
         mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
 
-        call_aligned mem_copy  ; Copy new member to the end of the array
+        fast_call mem_copy  ; Copy new member to the end of the array
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
@@ -191,21 +196,22 @@ dynamic_array:
 
     ; Removes member by index, shifts everything past by 1, args(QWORD array struct pointer, DWORD index)
     .remove:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
-        mov [rsp + 16], edx  ; Save element index in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save array struct pointer in shadow space
+        mov [rsp + 24], edx  ; Save element index in shadow space
 
         ; Get pointer to the member to be removed
-        call_aligned .get     
+        fast_call .get     
 
         ; Set up destination argument
-        mov rbx, [rsp + 8]  ; Retrieve array struct pointer
+        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
         mov r9d, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
         mov rcx, rax  ; Set destingation pointer
 
         ; Calculate memory block size to be shifted
         mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
-        mov r8d, [rsp + 16]  ; Retrieve element index
+        mov r8d, [rsp + 24]  ; Retrieve element index
         add r8d, 1  ; Get next element index
         sub eax, r8d  ; Get the number of members to be shifted
         mul r9  ; Get the size of memory chunk to be shifted
@@ -216,10 +222,10 @@ dynamic_array:
         add rdx, r9  ; Offset source pointer by 1 member
 
         ; Shift elements
-        call_aligned mem_copy
+        fast_call mem_copy
 
         ; Decrement member count
-        mov rbx, [rsp + 8]  ; Retrieve array struct pointer
+        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
         mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
         dec eax
         mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
@@ -241,15 +247,19 @@ dynamic_array:
             ; Decrease capacity
             mov rcx, rbx  ; Array struct pointer argument
             mov edx, eax  ; New capacity
-            call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
+            fast_call ._modify_capacity  ; Reallocates memory and updates capacity
 
         ._end_remove:
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
     ; Clears the array, args(QWORD array struct pointer)
     .clear:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+
         ; Reset member count
         mov DWORD [rcx + ARRAY_COUNT_OFFSET], 0
 
@@ -260,79 +270,85 @@ dynamic_array:
 
             ; Set min capacity
             mov edx, 10  ; set min capacity as an argument
-            call_aligned ._modify_capacity  ; Reallocates memory and updates capacity
+            fast_call ._modify_capacity  ; Reallocates memory and updates capacity
 
         ._end_clear:
 
-         ret
+        add rsp, 8  ; Restore the stack
+        ret
 
 
     ; Deallocates the array, args(QWORD array struct pointer)
     .free: 
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save array struct pointer in shadow space
  
         ; Get default heap handle
-        call_aligned GetProcessHeap
+        fast_call GetProcessHeap
 
         ; Check for errors (NULL return)
         cmp rax, NULL
         je ._memory_error
 
         ; Free memory
-        mov rbx, [rsp + 8]  ; Retrieve array struct pointer 
+        mov rbx, [rsp + 16]  ; Retrieve array struct pointer 
         mov rcx, rax  ; Use the handle as a first argument
         mov edx, 0  ; Allocation flags
         mov r8, [rbx]  ; Address of the memory chunk to be released
-        call_aligned HeapFree  ; Releases memory
+        fast_call HeapFree  ; Releases memory
 
         ; Check for errors (NULL return)
         cmp rax, NULL
         je ._memory_error
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
     ; Modify capacity and reallocate memory, args(QWORD array struct pointer, DWORD new capacity)
     ._modify_capacity:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save array struct pointer in shadow space
-        mov [rsp + 16], edx  ; Save new capacity in shadow space        
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save array struct pointer in shadow space
+        mov [rsp + 24], edx  ; Save new capacity in shadow space        
 
         ; Get default heap handle
-        call_aligned GetProcessHeap
+        fast_call GetProcessHeap
 
         ; Check for errors (NULL return)
         cmp rax, NULL
         je ._memory_error
 
         ; Reallocate memory
-        mov rbx, [rsp + 8]  ; Retrieve array struct pointer
+        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
         mov rcx, rax  ; Use the handle as a first argument
         mov edx, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
-        mov eax, [rsp + 16]  ; Retrieve new capacity
+        mov eax, [rsp + 24]  ; Retrieve new capacity
         mul rdx  ; Multiply by member size (affects rdx)
         mov r9, rax  ; Resulting number of bytes to reallocate
         mov edx, 0  ; Reallocation flags
         mov r8, [rbx]  ; Address of the memory chunk to be reallocated
-        call_aligned HeapReAlloc  ; Returns a pointer to the allocated memory
+        fast_call HeapReAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
         cmp rax, NULL
         je ._memory_error
 
         ; Modify array struct
-        mov rcx, [rsp +  8]  ; Retrieve array struct pointer
-        mov edx, [rsp + 16]  ; Retrieve new capacity
+        mov rcx, [rsp +  16]  ; Retrieve array struct pointer
+        mov edx, [rsp + 24]  ; Retrieve new capacity
         mov [rcx], rax  ; Update allocated memory pointer
         mov [rcx + ARRAY_CAPACITY_OFFSET], edx  ; Update capacity
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
+    ; Jump here when memory error is encountered
     ._memory_error:
         lea rcx, [messages.memory_error]  ; Notify the user that an error occured while managing heap memory
-        call_aligned console.print_string  ; Print error message
+        fast_call console.print_string  ; Print error message
 
         jmp exit
 
@@ -343,7 +359,8 @@ console:
 
     ; Prints a space-padded integer, args(DWORD unsigned integer)
     .print_int:
-        sub rsp, 32  ; Reserve space for a temporary buffer
+        ; Prolog
+        sub rsp, 32 + 8  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary
 
         mov eax, ecx  ; Move argument to the divident register
         mov ecx, 10  ; Use ecx register as a divisor
@@ -364,33 +381,35 @@ console:
             jne ._convert_digits_loop  ; Break if all digits have been processed
 
         inc rbx  ; Correct the resulting string pointer after itteration   
-        mov [rsp + 8 + 32], rbx  ; Save string pointer in shadow space 
+        mov [rsp + 16 + 32], rbx  ; Save string pointer in shadow space 
 
         ; Get output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
-        call_aligned GetStdHandle  ; Returns standard output handle
+        fast_call GetStdHandle  ; Returns standard output handle
 
         ; Write to standard output
         mov rcx, rax  ; Set output handle
-        mov rdx, [rsp + 8 + 32]  ; Retrieve string pointer
+        mov rdx, [rsp + 16 + 32]  ; Retrieve string pointer
         mov r8d, 10  ; Print 10 characters
-        lea r9, [rsp + 16 + 32]  ; The procedure will save the number of characters it will have written in shadow space
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        lea r9, [rsp + 24 + 32]  ; The procedure will save the number of characters it will have written in shadow space
+        sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
         mov QWORD [rsp], NULL  ; Reserved NULL parameter
         call WriteConsoleA  ; Writes to the console
-        add rsp, 40  ; Restore the stack
+        add rsp, 48  ; Restore the stack
 
         ; Check for errors (zero return)
         cmp eax, NULL
         je ._output_error
 
-        add rsp, 32  ; Restore the stack
+        add rsp, 32 + 8  ; Restore the stack
         ret
+
 
     ; Prints a NULL-terminated string, args(QWORD string pointer)
     .print_string:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save string pointer in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save string pointer in shadow space
 
         ; Initialize current character pointer
         mov rdx, rcx
@@ -406,26 +425,27 @@ console:
 
         ; Calculate string length
         sub rdx, rcx
-        mov [rsp + 16], rdx  ; Save string length in shadow space
+        mov [rsp + 24], rdx  ; Save string length in shadow space
 
         ; Get output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
-        call_aligned GetStdHandle  ; Returns standard output handle
+        fast_call GetStdHandle  ; Returns standard output handle
 
         ; Write to standard output
         mov rcx, rax  ; Set output handle
-        mov rdx, [rsp + 8]  ; Retrieve string pointer
-        mov r8d, [rsp + 16]  ; Retrieve string length
-        lea r9, [rsp + 24]  ; The procedure will save the number of characters it will have written in shadow space
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        mov rdx, [rsp + 16]  ; Retrieve string pointer
+        mov r8d, [rsp + 24]  ; Retrieve string length
+        lea r9, [rsp + 32]  ; The procedure will save the number of characters it will have written in shadow space
+        sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
         mov QWORD [rsp], NULL  ; Reserved NULL parameter
         call WriteConsoleA  ; Writes to the console
-        add rsp, 40  ; Restore the stack
+        add rsp, 48  ; Restore the stack
 
         ; Check for errors (zero return)
         cmp eax, NULL
         je ._output_error
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
@@ -434,9 +454,9 @@ console:
     ;Displays a warning message in case input cant be parsed and prompts user again
     .read_int:
         ; Read formatted input string
-        sub rsp, 64  ; Reserve space for a temporary buffer
+        sub rsp, 64 + 8  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary
         lea rcx, [rsp]  ; Set destination buffer
-        call_aligned .read_string  ; Read formatted input
+        fast_call .read_string  ; Read formatted input
 
         ; Parse an integer
         mov eax, 0  ; Initialize return value
@@ -469,7 +489,7 @@ console:
             ._int_overflow:
                 ; Display a warning if an overflow has occured
                 lea rcx, [messages.integer_too_large]
-                call_aligned .print_string
+                fast_call .print_string
 
                 mov eax, -1
                 jmp ._end_read_int  ; Load max int as a return value and end the procedure 
@@ -482,75 +502,78 @@ console:
 
             ; Display a warning otherwise
             lea rcx, [messages.integer_parse_failed]
-            call_aligned .print_string
+            fast_call .print_string
             
             ;Prompt user again
-            add rsp, 64  ; Restore the stack
+            add rsp, 64 + 8 ; Restore the stack
             jmp .read_int
 
         ._end_read_int:
         
-        add rsp, 64  ; Restore the stack
+        add rsp, 64 + 8  ; Restore the stack
         ret
 
 
     ;Same as console_read_raw, except it removes unwanted characters, replaces tabs with whitespaces, trims the string
     ;Displays a warning message in case input exceeds max length
     .read_string:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save destination buffer pointer in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save destination buffer pointer in shadow space
 
         ; Read raw input string
-        call_aligned ._read_raw
-        mov [rsp + 16], rax  ; Save ._read_raw return value
+        fast_call ._read_raw
+        mov [rsp + 24], rax  ; Save ._read_raw return value
 
         ; Format the string
-        mov rcx, [rsp + 8]  ; Retrieve the buffer pointer
-        call_aligned string.format  ; Formats the string
+        mov rcx, [rsp + 16]  ; Retrieve the buffer pointer
+        fast_call string.format  ; Formats the string
 
         ; Trim the string
-        mov rcx, [rsp + 8]  ; Retrieve the buffer pointer
-        call_aligned string.trim  ; Trims the string
+        mov rcx, [rsp + 16]  ; Retrieve the buffer pointer
+        fast_call string.trim  ; Trims the string
 
-        cmp QWORD [rsp + 16], 0  ; Check if input size was larger than max supported input length
+        cmp QWORD [rsp + 24], 0  ; Check if input size was larger than max supported input length
         jne ._end_read_string  ; Skip warning if it wasn't
 
             lea rcx, [messages.input_too_large]  ; Notify the user that input string will be trimmed
-            call_aligned .print_string  ; Print warning message
+            fast_call .print_string  ; Print warning message
 
         ._end_read_string:
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
     ;Reads up to 63 ANSI characters from console input without formatting, null-terminates the resulting string, 
     ;Flushes the input buffer, Returns 0 if input string length exceeds 63 characters, args(QWORD destination 64-byte buffer pointer)
     ._read_raw:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save destination buffer pointer in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save destination buffer pointer in shadow space
 
         ; Get input handle
         mov ecx, -10  ; Set to -10 to receive an input handle
-        call_aligned GetStdHandle  ; Returns standard input handle
-        mov [rsp + 24], rax  ; Save input handle in shadow space
+        fast_call GetStdHandle  ; Returns standard input handle
+        mov [rsp + 32], rax  ; Save input handle in shadow space
 
         ; Read from standard input
         sub rsp, 80  ; Reserve space for a temporary buffer
         mov rcx, rax  ; Set input handle
         lea rdx, [rsp]  ; Set destination buffer
         mov r8d, 66  ; Read 63 characters + CR + LF + another character to see if input is greater tan 63 characters
-        lea r9, [rsp + 16 + 80]  ; The procedure will save the number of characters it will have read in shadow space
-        sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+        lea r9, [rsp + 24 + 80]  ; The procedure will save the number of characters it will have read in shadow space
+        sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
         mov QWORD [rsp], NULL  ; Input control argument should be NULL for ANSI mode
         call ReadConsoleA  ; Reads input
-        add rsp, 40  ; Restore the stack
+        add rsp, 48  ; Restore the stack
 
         ; Check for errors (zero return)
         cmp eax, NULL
         je ._input_error
 
         ; NULL-terminate the string
-        mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
+        mov ecx, [rsp + 24 + 80]  ; Retrieve the number of characters read
         sub rcx, 2  ; Get the offset to CR character
         mov rdx, rcx
         shr rdx, 6  ; If input string length was more than 63 characters,
@@ -559,12 +582,12 @@ console:
         mov BYTE [rcx], NULL ; Set the CR character to NULL
 
         ; Copy the string to the destination
-        mov rcx, [rsp + 8 + 80]  ; Retrieve the destination buffer pointer
+        mov rcx, [rsp + 16 + 80]  ; Retrieve the destination buffer pointer
         lea rdx, [rsp]  ; Set the source string pointer      
-        call_aligned string.copy  ; Copy the string to the destination
+        fast_call string.copy  ; Copy the string to the destination
 
         ; Check if input string length did not exceed 63 characters
-        mov ecx, [rsp + 16 + 80]  ; Retrieve the number of characters read
+        mov ecx, [rsp + 24 + 80]  ; Retrieve the number of characters read
         cmp ecx, 65  ; Compare against max length + CR + LF
         jbe ._end_read_raw  ; Return if string length did not exceed max length
 
@@ -574,19 +597,19 @@ console:
                 mov cl, [rsp + 65] ; Load the last character from the discard buffer
                 cmp cl, LF
                 je ._end_flush_buffer  ; Stop flushing if the last character read is a newline character
-                mov ecx, [rsp + 16 + 80]  ; Load the number of characters the ReadConsole procedure has previously read
+                mov ecx, [rsp + 24 + 80]  ; Load the number of characters the ReadConsole procedure has previously read
                 cmp ecx, 66  ; Compare against discard buffer size
                 jb ._end_flush_buffer  ; Stop flushing if the procedure has read less than 64 characters
 
                 ; Read remaining characters from standard input
-                mov rcx, [rsp + 24 + 80]  ; Retrieve standard input handle
+                mov rcx, [rsp + 32 + 80]  ; Retrieve standard input handle
                 lea rdx, [rsp]  ; Specify the discard buffer
                 mov r8d, 66  ; Read 66 characters
-                lea r9, [rsp + 16 + 80]  ; The procedure will save the number of characters it will have read in shadow space
-                sub rsp, 40  ; Reserve shadow space and align to a 16-byte boundary
+                lea r9, [rsp + 24 + 80]  ; The procedure will save the number of characters it will have read in shadow space
+                sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
                 mov QWORD [rsp], NULL  ; Input control argument should be NULL for ANSI mode
                 call ReadConsoleA  ; Reads and flushes 64 characters
-                add rsp, 40  ; Restore the stack
+                add rsp, 48  ; Restore the stack
 
                 ; Check for errors (zero return)
                 cmp eax, NULL
@@ -596,23 +619,25 @@ console:
 
             ._end_flush_buffer:
 
-            add rsp, 80  ; Restore the stack
+            add rsp, 80 + 8  ; Restore the stack
             mov rax, 0  ; Return zero if string length has exceeded max length
             ret
 
         ._end_read_raw:
-            add rsp, 80  ; Restore the stack
+            add rsp, 80 + 8  ; Restore the stack
             mov rax, 1  ; Return non-zero value if the whole input was read
             ret
 
 
+    ; Jump here when input error is encountered
     ._input_error:
         lea rcx, [messages.input_error]  ; Notify the user that an error occured while reading input
-        call_aligned .print_string  ; Print error message
+        fast_call .print_string  ; Print error message
 
         jmp exit
 
 
+    ; Jump here when output error is encountered
     ._output_error:
         jmp exit
 
@@ -680,8 +705,9 @@ string:
 
     ; Removes leading and trailing whitespaces, args(QWORD NULL-terminated string pointer) 
     .trim:
-        ; Save arguments
-        mov [rsp + 8], rcx  ; Save string pointer in shadow space
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save string pointer in shadow space
 
         mov rdx, rcx  ; Set up offset pointer
 
@@ -698,8 +724,8 @@ string:
         je ._find_terminator
 
             ; Shift the string to remove leading spaces
-            call_aligned .copy  ; Copy the string without leading spaces 
-            mov rcx, [rsp + 8]  ; Retrieve string pointer
+            fast_call .copy  ; Copy the string without leading spaces 
+            mov rcx, [rsp + 16]  ; Retrieve string pointer
 
         ._find_terminator:
         mov rdx, rcx  ; Set up current character pointer
@@ -729,11 +755,14 @@ string:
 
         ._end_remove_trailing_loop:
 
+        add rsp, 8  ; Restore the stack
         ret
 
 
 
 exit:
-    mov  ecx, 0  ; Load exit status
-    call_aligned ExitProcess
+    mov ecx, 0  ; Load exit status
+    fast_call ExitProcess  ; Terminate the process
+
+    add rsp, 8  ; Restore the stack
     hlt
