@@ -15,6 +15,18 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <NASM Include="src\string.asm">
+      <Filter>Source Files</Filter>
+    </NASM>
+    <NASM Include="src\common.asm">
+      <Filter>Source Files</Filter>
+    </NASM>
+    <NASM Include="src\console.asm">
+      <Filter>Source Files</Filter>
+    </NASM>
+    <NASM Include="src\dynamic_array.asm">
+      <Filter>Source Files</Filter>
+    </NASM>
     <NASM Include="src\main.asm">
       <Filter>Source Files</Filter>
     </NASM>
