@@ -24,6 +24,22 @@ string:
         ret
 
 
+    ; Returns string length, args(QWORD NULL-terminated string pointer)
+    .len:
+        mov rax, 0  ; Initialize current character pointer to 0
+
+        ; Search for NULL terminator
+        ._find_terminator_loop:
+            cmp BYTE [rcx + rax], NULL
+            je ._end_find_terminator_loop  ; Break if current character is a NULL terminator         
+            inc rax  ; Increment character pointer
+            jmp ._find_terminator_loop  ; Continue itteration
+
+        ._end_find_terminator_loop:
+
+        ret  ; Return current char pointer (string length)
+
+
     ; Removes unwanted characters, replaces tabs with whitespaces, args(QWORD NULL-terminated string pointer)    
     .format:
         mov rbx, rcx  ; Initialize character shift location to string pointer
@@ -112,22 +128,6 @@ string:
 
         add rsp, 8  ; Restore the stack
         ret
-
-
-    ; Returns string length, args(QWORD NULL-terminated string pointer)
-    .len:
-        mov rax, 0  ; Initialize current character pointer to 0
-
-        ; Search for NULL terminator
-        ._find_terminator_loop:
-            cmp BYTE [rcx + rax], NULL
-            je ._end_find_terminator_loop  ; Break if current character is a NULL terminator         
-            inc rax  ; Increment character pointer
-            jmp ._find_terminator_loop  ; Continue itteration
-
-        ._end_find_terminator_loop:
-
-        ret  ; Return current char pointer (string length)
 
 
     ; Pads a string with whitespaces up to a length of 63 characters, args(QWORD pointer to a NULL-terminated string in a 64-byte buffer)

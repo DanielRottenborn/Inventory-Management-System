@@ -13,10 +13,17 @@ extern WriteConsoleA  ; Writes ANSI characters to standard output
 ; Rodata section
 section .rodata
 console_messages:
-    .input_too_large: db WARNING_COLOR, "Input is too large and will be clipped.", REGULAR_COLOR, LF, NULL
-    .integer_too_large: db WARNING_COLOR, "Entered number is too large and will be clamped.", REGULAR_COLOR, LF, NULL
-    .integer_parse_failed: db ERROR_COLOR, "Failed to read a number, try again: ", REGULAR_COLOR, NULL
-    .input_error: db FATAL_ERROR_COLOR,"An error occured while reading input.", REGULAR_COLOR, LF, NULL
+    .input_too_large: db WARNING_COLOR, "Input is too large and will be clipped.", DEFAULT_COLOR, LF, NULL
+    .integer_too_large: db WARNING_COLOR, "Entered number is too large and will be clamped.", DEFAULT_COLOR, LF, NULL
+    .integer_parse_failed: db ERROR_COLOR, "Failed to read a number, try again: ", DEFAULT_COLOR, NULL
+    .input_error: db FATAL_ERROR_COLOR,"An error occured while reading input.", DEFAULT_COLOR, LF, NULL
+
+console_control:
+    .set_window_name_begin: db ESC, "]0;", NULL  ; Starts changing the window title
+    .set_window_name_end: db ESC, 0x5C , NULL ; Ends changing the window title
+    .clear_screen: db ESC, "[1;1H",  ESC, "[2J", ESC, "[3J", NULL  ; Resets cursor position and clears the screen
+    .restore_text_color: db DEFAULT_COLOR, NULL 
+    .highlight_background: db HIGHLIGHT_BG_COLOR, NULL
 
 
 ; Text section
@@ -24,6 +31,28 @@ section .text
 
 ; Console IO functionality
 console:
+
+    ; Change window name and apply default text colors, args (QWORD window name string pointer)
+    .init:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], rcx  ; Save string pointer in shadow space
+
+        lea rcx, [console_control.restore_text_color]
+        fast_call .print_string  ; Apply default text color
+
+        lea rcx, [console_control.set_window_name_begin]
+        fast_call .print_string  ; Start changing the window title
+
+        mov rcx, [rsp + 16]  ; Retrieve string pointer
+        fast_call .print_string  ; Change Window Title
+
+        lea rcx, [console_control.set_window_name_end]
+        fast_call .print_string  ; End changing the window title 
+
+        add rsp, 8  ; Restore the stack
+        ret
+
 
     ; Prints a space-padded integer, args(DWORD unsigned integer)
     .print_int:

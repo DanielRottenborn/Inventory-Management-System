@@ -13,10 +13,13 @@ LF equ 10  ; Newline character
 ESC equ 27  ; Escape character
 
 ; Macros
-%define REGULAR_COLOR ESC, "[0m"  ; Resets text color
+%define DEFAULT_COLOR ESC, "[97m"  ; Resets text color
 %define WARNING_COLOR ESC, "[93m"  ; Changes text color to bright yellow
 %define ERROR_COLOR ESC, "[38;2;255;145;65m"  ; Changes text color to bright orange
 %define FATAL_ERROR_COLOR ESC, "[91m"  ; Changes text color to bright red
+
+%define DEFAULT_BG_COLOR ESC, "[40m"  ; Resets background color
+%define HIGHLIGHT_BG_COLOR ESC, "[101m"  ; Changes background color to bright red
 
 %macro fast_call 1  ; Reserves shadow space for __fastcall convention
     sub rsp, 32  ; Reserve shadow space

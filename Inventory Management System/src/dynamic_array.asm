@@ -19,7 +19,7 @@ ARRAY_MEMBER_SIZE_OFFSET equ 16  ; Offset to the array member size parameter
 ; Rodata section
 section .rodata
 array_messages:
-    .memory_error: db FATAL_ERROR_COLOR,"An error occured while managing heap memory.", REGULAR_COLOR, LF, NULL
+    .memory_error: db FATAL_ERROR_COLOR,"An error occured while managing heap memory.", DEFAULT_COLOR, LF, NULL
 
 
 ; Text section
