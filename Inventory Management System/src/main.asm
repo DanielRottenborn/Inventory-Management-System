@@ -411,21 +411,9 @@ console:
         sub rsp, 8  ; Align the stack to a 16-byte boundary
         mov [rsp + 16], rcx  ; Save string pointer in shadow space
 
-        ; Initialize current character pointer
-        mov rdx, rcx
-
-        ; Search for the terminator character
-        ._print_find_terminator_loop:
-            cmp BYTE [rdx], NULL
-            je ._end_print_find_terminator_loop  ; Break if current character is a NULL terminator         
-            inc rdx  ; Increment character pointer
-            jmp ._print_find_terminator_loop  ; Continue itteration
-
-        ._end_print_find_terminator_loop:
-
         ; Calculate string length
-        sub rdx, rcx
-        mov [rsp + 24], rdx  ; Save string length in shadow space
+        fast_call string.len
+        mov [rsp + 24], rax  ; Save string length in shadow space
 
         ; Get output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
@@ -721,42 +709,50 @@ string:
         ._end_find_leading_loop:
 
         cmp rdx, rcx  ; Skip shifting if there are no leading whitespace characters
-        je ._find_terminator
+        je ._find_last_character
 
             ; Shift the string to remove leading spaces
             fast_call .copy  ; Copy the string without leading spaces 
             mov rcx, [rsp + 16]  ; Retrieve string pointer
 
-        ._find_terminator:
-        mov rdx, rcx  ; Set up current character pointer
-        
-        ; Search for the terminator character
-        ._find_terminator_loop:
-            cmp BYTE [rdx], NULL
-            je ._end_find_terminator_loop  ; Break if current character is a NULL terminator         
-            inc rdx  ; Increment character pointer
-            jmp ._find_terminator_loop  ; Continue itteration
+        ._find_last_character:
 
-        ._end_find_terminator_loop:
-
-        dec rdx  ; Get the last non-NULL character
+        fast_call string.len  ; Get string length
+        add rax, rcx  ; Calculate pointer to the NULL terminator
+        dec rax  ; Get the last non-NULL character
 
         ; Remove trailing whitespaces
         ._remove_trailing_loop:
-            cmp rdx, rcx
+            cmp rax, rcx
             jb ._end_remove_trailing_loop  ; Break if current character pointer is below the string pointer
 
-            cmp BYTE [rdx], ' '
+            cmp BYTE [rax], ' '
             jne ._end_remove_trailing_loop  ; Break if current character is not a whitespace
 
-            mov BYTE [rdx], NULL  ; Replace current character with NULL otherwise
-            dec rdx  ; Decrement current character pointer
+            mov BYTE [rax], NULL  ; Replace current character with NULL otherwise
+            dec rax  ; Decrement current character pointer
             jmp ._remove_trailing_loop  ; Continue itteration
 
         ._end_remove_trailing_loop:
 
         add rsp, 8  ; Restore the stack
         ret
+
+
+    ; Returns string length, args(QWORD NULL-terminated string pointer)
+    .len:
+        mov rax, 0  ; Initialize current character pointer to 0
+
+        ; Search for NULL terminator
+        ._find_terminator_loop1:
+            cmp BYTE [rcx + rax], NULL
+            je ._end_find_terminator_loop1  ; Break if current character is a NULL terminator         
+            inc rax  ; Increment character pointer
+            jmp ._find_terminator_loop1  ; Continue itteration
+
+        ._end_find_terminator_loop1:
+
+        ret  ; Return current char pointer (string length)
 
 
 
