@@ -8,6 +8,11 @@ bits 64  ; Target 64-bit architecture exclusively
 
 global mainCRTStartup  ; Entry point for the CONSOLE subsystem
 
+; Constants
+ITEM_CATEGORY_OFFSET equ  64  ; Offset to the item category parameter
+ITEM_PRIORITY_OFFSET equ 128  ; Offset to the item priority parameter
+ITEM_QUANTITY_OFFSET equ 132  ; Offset to the item quantity parameter
+ITEM_CAPACITY_OFFSET equ 136  ; Offset to the item capacity parameter
 
 ; Rodata section
 section .rodata
@@ -15,14 +20,28 @@ section .rodata
 window_title: db "Inventory Management System - TP065500", NULL
 
 table_border:
-    .left: db "|", NULL
+    .horizontal:            db " ", 172 dup "-", LF, NULL
+    .horizontal_contracted: db " ", 110 dup "-", LF, NULL
+    .horizontal_separator:            db " |", 63 + 2 dup "-", "|", 63 + 2 dup "-", "|------------|------------|------------|", LF, NULL
+    .horizontal_separator_contracted: db " |", 32 + 2 dup "-", "|", 32 + 2 dup "-", "|------------|------------|------------|", LF, NULL 
+    .left: db " |", NULL
     .left_padding: db " ", NULL
     .middle: db " | ", NULL
     .right: db " ", DEFAULT_BG_COLOR, "|", LF, NULL  ; Resets background color
 
+table_header:            db " | Item Name", 63 - 9 dup " ", " | Category", 63 - 8 dup " ", " | Priority   | Quantity   | Capacity   |", LF, NULL
+table_header_contracted: db " | Item Name", 32 - 9 dup " ", " | Category", 32 - 8 dup " ", " | Priority   | Quantity   | Capacity   |", LF, NULL
+
+table_empty:            db " | No Items Found", 63 - 14 + 1 dup " ", "|", 63 + 2 dup " ", "|            |            |            |", LF, NULL
+table_empty_contracted: db " | No Items Found", 32 - 14 + 1 dup " ", "|", 32 + 2 dup " ", "|            |            |            |", LF, NULL
+
 
 ; Data section
+sectalign 4
 section .data
+
+    alignb 4
+    item_table.contract: dd 1  ; Bool, should the item table be contracted or expanded
 
 
 ; Bss section
@@ -54,6 +73,8 @@ mainCRTStartup:
     sub rsp, 8  ; Align the stack to a 16-byte boundary
 
     fast_call inventory_system.init
+    fast_call inventory_system.display_item_table
+    fast_call console.read_int
 
     jmp exit
 
@@ -70,12 +91,12 @@ inventory_system:
         lea rcx, [window_title]
         fast_call console.init
 
-        ;Initialize item array
+        ; Initialize item array
         lea rcx, [items]
         mov edx, 64 + 64 + 4 + 4 + 4  ; Size of two 64-byte strings, three 32-bit integers
         fast_call dynamic_array.init
 
-        ;Initialize display sequence array
+        ; Initialize display sequence array
         lea rcx, [item_display_sequence]
         mov edx, 4  ; Size of a 32-bit item index
         fast_call dynamic_array.init
@@ -84,8 +105,118 @@ inventory_system:
         ret
 
 
+    .display_item_table:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], r12  ; Save nonvolatile register
+
+        ; Display header and top borders
+        cmp DWORD [item_table.contract], 1
+        je ._display_contracted_header  ; Display contracted header if the flag is set
+
+            ; Display horizontal border
+            lea rcx, [table_border.horizontal]
+            fast_call console.print_string            
+
+            ; Display table header
+            lea rcx, [table_header]
+            fast_call console.print_string  
+
+            ; Display horizontal separator
+            lea rcx, [table_border.horizontal_separator]
+            fast_call console.print_string  
+
+            jmp ._display_items
+
+        ._display_contracted_header:
+
+            ; Display contracted horizontal border
+            lea rcx, [table_border.horizontal_contracted]
+            fast_call console.print_string            
+
+            ; Display contracted table header
+            lea rcx, [table_header_contracted]
+            fast_call console.print_string  
+
+            ; Display contracted horizontal separator
+            lea rcx, [table_border.horizontal_separator_contracted]
+            fast_call console.print_string  
+
+        ._display_items:
+
+        mov r12d, 0  ; Set display counter to 0
+
+        ._display_items_loop:
+            cmp r12d, [item_display_sequence + ARRAY_COUNT_OFFSET]
+            jae ._end_display_items_loop  ; Terminate display sequence if all items in display sequence array were processed
+
+            ; Get index of the next item to be displayed
+            lea rcx, [item_display_sequence]
+            mov edx, r12d
+            fast_call dynamic_array.get
+
+            ; Get pointer the next item to be displayed
+            lea rcx, [items]
+            mov edx, [rax]
+            fast_call dynamic_array.get
+
+            ; Display the item
+            lea rcx, [rax]
+            mov edx, [item_table.contract]
+            fast_call .display_item_info
+
+            ; Continue itteration
+            inc r12d
+            jmp ._display_items_loop
+
+        ._end_display_items_loop:
+
+        cmp r12d, 0
+        ja ._display_footer  ; Check if the table is empty and proceed to footer display if it is not
+
+        ; Display a message to indicate that the table is empty
+        cmp DWORD [item_table.contract], 1
+        je ._display_contracted_message  ; Display contracted message if the flag is set
+
+            ; Display empty table message
+            lea rcx, [table_empty]
+            fast_call console.print_string            
+
+            jmp ._display_footer
+
+        ._display_contracted_message:
+
+            ; Display contracted empty table message
+            lea rcx, [table_empty_contracted]
+            fast_call console.print_string  
+
+        ._display_footer:
+
+        ; Display footer
+        cmp DWORD [item_table.contract], 1
+        je ._display_contracted_footer  ; Display contracted footer if the flag is set
+
+            ; Display horizontal border
+            lea rcx, [table_border.horizontal]
+            fast_call console.print_string            
+
+            jmp ._end_display_item_table
+
+        ._display_contracted_footer:
+
+            ; Display contracted horizontal border
+            lea rcx, [table_border.horizontal_contracted]
+            fast_call console.print_string 
+        
+        ._end_display_item_table:    
+
+        mov r12, [rsp + 16]  ; Restore nonvolatile register
+        add rsp, 8  ; Restore the stack
+        ret
+
+
     ; Prints out a table entry with member information, either in long or in short form args(QWORD item struct pointer, DWORD bool shorten)
-    .print_item_info:
+    .display_item_info:
         ; Prolog
         mov [rsp + 8], r12  ; Save nonvolotile register
         mov [rsp + 16], r13  ; Save nonvolotile register
@@ -97,13 +228,13 @@ inventory_system:
         lea rcx, [table_border.left]
         fast_call console.print_string
 
-        cmp DWORD [r12 + 160], 3
-        jae ._print_item_info  ; Check if item quantity is equal to or greater than 3
+        cmp DWORD [r12 + ITEM_QUANTITY_OFFSET], 3
+        jae ._display_item_info  ; Check if item quantity is equal to or greater than 3
        
             lea rcx, [console_control.highlight_background]
             fast_call console.print_string  ; Highlight the row otherwise
 
-        ._print_item_info:
+        ._display_item_info:
 
         ; Print left border padding
         lea rcx, [table_border.left_padding]
@@ -136,7 +267,7 @@ inventory_system:
 
         ; Copy item category into the temporary buffer
         lea rcx, [rsp]  ; Use temporary buffer as destination
-        lea rdx, [r12 + 64]
+        lea rdx, [r12 + ITEM_CATEGORY_OFFSET]
         fast_call string.copy
 
         ; Pad the category
@@ -160,7 +291,7 @@ inventory_system:
         fast_call console.print_string
 
         ; Print the priority value
-        mov ecx, [r12 + 128]
+        mov ecx, [r12 + ITEM_PRIORITY_OFFSET]
         fast_call console.print_int
 
         ; Print border
@@ -168,7 +299,7 @@ inventory_system:
         fast_call console.print_string
 
         ; Print the quantity value
-        mov ecx, [r12 + 160]
+        mov ecx, [r12 + ITEM_QUANTITY_OFFSET]
         fast_call console.print_int
 
         ; Print border
@@ -176,7 +307,7 @@ inventory_system:
         fast_call console.print_string
 
         ; Print the max quantity value
-        mov ecx, [r12 + 192]
+        mov ecx, [r12 + ITEM_CAPACITY_OFFSET]
         fast_call console.print_int
 
         ; Print right border and restore background color
