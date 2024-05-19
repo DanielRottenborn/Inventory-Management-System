@@ -67,7 +67,7 @@ dynamic_array:
         ret
 
 
-    ; Pushes new element, args(QWORD array struct pointer, QWORD new member pointer)
+    ; Pushes new element, returns member index, args(QWORD array struct pointer, QWORD new member pointer)
     .push:
         ; Prolog
         sub rsp, 8  ; Align the stack to a 16-byte boundary
@@ -102,6 +102,11 @@ dynamic_array:
         mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
 
         fast_call mem_copy  ; Copy new member to the end of the array
+
+        ; Return member index
+        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
+        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get element count
+        dec eax  ; Decrement to get the index of the last element
 
         add rsp, 8  ; Restore the stack
         ret

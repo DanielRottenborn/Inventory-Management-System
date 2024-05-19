@@ -14,6 +14,7 @@ ITEM_PRIORITY_OFFSET equ 128  ; Offset to the item priority parameter
 ITEM_QUANTITY_OFFSET equ 132  ; Offset to the item quantity parameter
 ITEM_CAPACITY_OFFSET equ 136  ; Offset to the item capacity parameter
 
+
 ; Rodata section
 section .rodata
 
@@ -32,9 +33,18 @@ table_border:
 table_header:            db " | Item Name", 63 - 9 dup " ", " | Category", 63 - 8 dup " ", " | Priority   | Quantity   | Capacity   |", LF, NULL
 table_header_contracted: db " | Item Name", 32 - 9 dup " ", " | Category", 32 - 8 dup " ", " | Priority   | Quantity   | Capacity   |", LF, NULL
 
-table_empty:            db " | No Items Found", 63 - 14 + 1 dup " ", "|", 63 + 2 dup " ", "|            |            |            |", LF, NULL
-table_empty_contracted: db " | No Items Found", 32 - 14 + 1 dup " ", "|", 32 + 2 dup " ", "|            |            |            |", LF, NULL
+table_empty:             db " | No Items Found", 63 - 14 + 1 dup " ", "|", 63 + 2 dup " ", "|            |            |            |", LF, NULL
+table_empty_contracted:  db " | No Items Found", 32 - 14 + 1 dup " ", "|", 32 + 2 dup " ", "|            |            |            |", LF, NULL
 
+messages:
+    .enter_name:     db "Enter item name: ", NULL
+    .enter_category: db "Enter item category: ", NULL
+    .enter_priority: db "Enter item priority: ", NULL
+    .enter_quantity: db "Enter current item quantity: ", NULL 
+    .enter_capacity: db "Enter available capacity: ", NULL
+
+    .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
+    .entered_capacity_zero: db ERROR_COLOR, "Capacity can not be zero, try again: ", DEFAULT_COLOR, NULL
 
 ; Data section
 sectalign 4
@@ -42,6 +52,8 @@ section .data
 
     alignb 4
     item_table.contract: dd 1  ; Bool, should the item table be contracted or expanded
+    display_sequence.sorted: dd 1  ; Bool, used to determine if display sequence is properly sorted
+    display_sequence.filtered: dd 1  ; Bool, used to determine if display sequence is properly filtered
 
 
 ; Bss section
@@ -58,7 +70,7 @@ items:
 
 ; A dynamic array to store item display sequence
 alignb 8 
-item_display_sequence:
+display_sequence:
     .address:       resb 8
     .count:         resb 4
     .capacity:      resb 4
@@ -73,6 +85,7 @@ mainCRTStartup:
     sub rsp, 8  ; Align the stack to a 16-byte boundary
 
     fast_call inventory_system.init
+    fast_call inventory_system.add_item
     fast_call inventory_system.display_item_table
     fast_call console.read_int
 
@@ -97,11 +110,87 @@ inventory_system:
         fast_call dynamic_array.init
 
         ; Initialize display sequence array
-        lea rcx, [item_display_sequence]
+        lea rcx, [display_sequence]
         mov edx, 4  ; Size of a 32-bit item index
         fast_call dynamic_array.init
 
         add rsp, 8  ; Restore the stack
+        ret
+
+
+    ; Prompts user to input item info, then adds a new item to the system
+    .add_item:
+        sub rsp, 8 + 144  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
+
+        ; Prompt for item name
+        lea rcx, [messages.enter_name]
+        fast_call console.print_string  ; Display prompt message
+        lea rcx, [rsp]
+        fast_call console.read_string  ; Read name from the console
+
+        ; Prompt for item category
+        lea rcx, [messages.enter_category]
+        fast_call console.print_string  ; Display prompt message
+        lea rcx, [rsp + ITEM_CATEGORY_OFFSET]
+        fast_call console.read_string  ; Read category from the console
+
+        ; Prompt for item priority
+        lea rcx, [messages.enter_priority]
+        fast_call console.print_string  ; Display prompt message
+        fast_call console.read_int  ; Read priority from the console
+        mov [rsp + ITEM_PRIORITY_OFFSET], eax  ; Save in temporary buffer
+
+        ; Prompt for item quantity
+        lea rcx, [messages.enter_quantity]
+        fast_call console.print_string  ; Display prompt message
+        fast_call console.read_int  ; Read quantity from the console
+        mov [rsp + ITEM_QUANTITY_OFFSET], eax  ; Save in temporary buffer
+
+        ; Prompt for item capacity
+        lea rcx, [messages.enter_capacity]
+        fast_call console.print_string  ; Display prompt message
+
+        ._prompt_for_capacity:
+
+        fast_call console.read_int  ; Read capacity from the console
+        mov [rsp + ITEM_CAPACITY_OFFSET], eax  ; Save in temporary buffer
+
+        cmp eax, 0
+        ja ._check_against_quantity  ; Check if capacity is not zero and proceed
+
+            lea rcx, [messages.entered_capacity_zero]
+            fast_call console.print_string  ; Notify user that entered capacity is too low and prompt again otherwise 
+            
+            jmp ._prompt_for_capacity
+
+        ._check_against_quantity:
+
+        cmp eax, [rsp + ITEM_QUANTITY_OFFSET]
+        jae ._push_new_item  ; Check if capacity is equal to or greater than quantity entered and proceed
+
+            lea rcx, [messages.entered_capacity_too_low]
+            fast_call console.print_string  ; Notify user that entered capacity is too low and prompt again otherwise 
+            
+            jmp ._prompt_for_capacity
+
+        ._push_new_item:
+
+        ; Push new item to the array
+        lea rcx, [items]
+        lea rdx, [rsp]
+        fast_call dynamic_array.push
+
+        ; Push item index to the display sequence array
+        mov [rsp], eax
+        lea rcx, [display_sequence]
+        lea rdx, [rsp]
+        fast_call dynamic_array.push
+
+        ; Set display_sequence_sorted and display_sequence_filtered flags to 0
+        mov DWORD [display_sequence.sorted], 0
+        mov DWORD [display_sequence.filtered], 0
+
+        add rsp, 8 + 144  ; Restore the stack
         ret
 
 
@@ -147,11 +236,11 @@ inventory_system:
         mov r12d, 0  ; Set display counter to 0
 
         ._display_items_loop:
-            cmp r12d, [item_display_sequence + ARRAY_COUNT_OFFSET]
+            cmp r12d, [display_sequence + ARRAY_COUNT_OFFSET]
             jae ._end_display_items_loop  ; Terminate display sequence if all items in display sequence array were processed
 
             ; Get index of the next item to be displayed
-            lea rcx, [item_display_sequence]
+            lea rcx, [display_sequence]
             mov edx, r12d
             fast_call dynamic_array.get
 
@@ -215,7 +304,7 @@ inventory_system:
         ret
 
 
-    ; Prints out a table entry with member information, either in long or in short form args(QWORD item struct pointer, DWORD bool shorten)
+    ; Prints out a table entry with member information, either in long or in short form, args(QWORD item struct pointer, DWORD bool shorten)
     .display_item_info:
         ; Prolog
         mov [rsp + 8], r12  ; Save nonvolotile register
