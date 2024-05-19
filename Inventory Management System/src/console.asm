@@ -22,6 +22,7 @@ console_control:
     .set_window_name_begin: db ESC, "]0;", NULL  ; Starts changing the window title
     .set_window_name_end: db ESC, 0x5C , NULL ; Ends changing the window title
     .clear_screen: db ESC, "[1;1H",  ESC, "[2J", ESC, "[3J", NULL  ; Resets cursor position and clears the screen
+    .apply_input_color: db INPUT_COLOR, NULL
     .restore_text_color: db DEFAULT_COLOR, NULL 
     .highlight_background: db HIGHLIGHT_BG_COLOR, NULL
 
@@ -237,6 +238,10 @@ console:
         sub rsp, 8  ; Align the stack to a 16-byte boundary
         mov [rsp + 16], rcx  ; Save destination buffer pointer in shadow space
 
+        ; Apply input color
+        lea rcx, [console_control.apply_input_color]
+        fast_call .print_string
+
         ; Get input handle
         mov ecx, -10  ; Set to -10 to receive an input handle
         fast_call GetStdHandle  ; Returns standard input handle
@@ -256,6 +261,10 @@ console:
         ; Check for errors (zero return)
         cmp eax, NULL
         je ._input_error
+
+        ; Restore text color
+        lea rcx, [console_control.restore_text_color]
+        fast_call .print_string
 
         ; NULL-terminate the string
         mov ecx, [rsp + 24 + 80]  ; Retrieve the number of characters read

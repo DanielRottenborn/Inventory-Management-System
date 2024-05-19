@@ -42,7 +42,7 @@ string:
 
     ; Tests two strings for equality, returns 1 if strings are equal, 0 otherwise, args(QWORD NULL-terminated string pointer, QWORD NULL-terminated string pointer)    
     .compare:
-        mov rax, 1  ; Initialize return value to true
+        mov eax, 1  ; Initialize return value to true
         mov rbx, 0  ; Initialize character offset to 0
 
         ._compare_characters_loop:
@@ -52,7 +52,7 @@ string:
             cmp r8b, r9b
             je ._check_terminators  ; Proceed if characters are equal
 
-                mov rax, 0  ; Return false otherwise
+                mov eax, 0  ; Return false otherwise
                 ret
 
             ._check_terminators:
