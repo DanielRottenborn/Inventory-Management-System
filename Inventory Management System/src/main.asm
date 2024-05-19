@@ -43,8 +43,11 @@ messages:
     .enter_quantity: db "Enter current item quantity: ", NULL 
     .enter_capacity: db "Enter available capacity: ", NULL
 
-    .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_zero: db ERROR_COLOR, "Capacity can not be zero, try again: ", DEFAULT_COLOR, NULL
+    .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
+    .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL 
+    .item_exists: db ERROR_COLOR, "This item already exists, try again: ", DEFAULT_COLOR, NULL
+
 
 ; Data section
 sectalign 4
@@ -52,8 +55,6 @@ section .data
 
     alignb 4
     item_table.contract: dd 1  ; Bool, should the item table be contracted or expanded
-    display_sequence.sorted: dd 1  ; Bool, used to determine if display sequence is properly sorted
-    display_sequence.filtered: dd 1  ; Bool, used to determine if display sequence is properly filtered
 
 
 ; Bss section
@@ -125,8 +126,37 @@ inventory_system:
         ; Prompt for item name
         lea rcx, [messages.enter_name]
         fast_call console.print_string  ; Display prompt message
+
+        ._prompt_for_item_name:
+
         lea rcx, [rsp]
         fast_call console.read_string  ; Read name from the console
+
+        lea rcx, [rsp]
+        fast_call string.len  ; Check entered name length
+
+        cmp rax, 0
+        jne ._verify_name_uniqueness
+
+            lea rcx, [messages.empty_name]
+            fast_call console.print_string  ; Notify user that the entered name should not be empty prompt again otherwise 
+            
+            jmp ._prompt_for_item_name
+
+        ._verify_name_uniqueness:
+
+        lea rcx, [rsp]
+        fast_call .find_item_by_name  ; Search for items with similar name
+
+        cmp rax, -1
+        je ._prompt_for_item_category  ; Proceed if the name is unique
+
+            lea rcx, [messages.item_exists]
+            fast_call console.print_string  ; Notify user that the entered name is already in use and prompt again otherwise 
+            
+            jmp ._prompt_for_item_name            
+
+        ._prompt_for_item_category:
 
         ; Prompt for item category
         lea rcx, [messages.enter_category]
@@ -185,10 +215,6 @@ inventory_system:
         lea rcx, [display_sequence]
         lea rdx, [rsp]
         fast_call dynamic_array.push
-
-        ; Set display_sequence_sorted and display_sequence_filtered flags to 0
-        mov DWORD [display_sequence.sorted], 0
-        mov DWORD [display_sequence.filtered], 0
 
         add rsp, 8 + 144  ; Restore the stack
         ret
@@ -307,11 +333,11 @@ inventory_system:
     ; Prints out a table entry with member information, either in long or in short form, args(QWORD item struct pointer, DWORD bool shorten)
     .display_item_info:
         ; Prolog
-        mov [rsp + 8], r12  ; Save nonvolotile register
-        mov [rsp + 16], r13  ; Save nonvolotile register
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        mov [rsp + 16], r13  ; Save nonvolatile register
         sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary
-        mov r12, rcx  ; Save item struct pointer in nonvolotile register
-        mov r13d, edx  ; Save shorten flag in nonvolotile register
+        mov r12, rcx  ; Save item struct pointer in nonvolatile register
+        mov r13d, edx  ; Save shorten flag in nonvolatile register
 
         ; Print left border
         lea rcx, [table_border.left]
@@ -405,6 +431,57 @@ inventory_system:
 
         ; Epilog
         add rsp, 8 + 64  ; Restore the stack
-        mov r12, [rsp + 8]  ; Restore nonvolotile register
-        mov r13, [rsp + 16]  ; Restore nonvolotile register
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        mov r13, [rsp + 16]  ; Restore nonvolatile register
         ret
+
+
+    ; Searches for an item by name, returns index of the found item or QWORD -1 if not found, args(QWORD name string pointer)
+    .find_item_by_name:
+        ; Prolog
+        mov [rsp + 8], r12   ; Save nonvolatile register
+        mov [rsp + 16], r13  ; Save nonvolatile register
+        mov [rsp + 24], r14  ; Save nonvolatile register
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov r12, rcx  ; Save the name string pointer in nonvolatile register
+
+        mov r13d, 0  ; Initialize current item index
+        mov r14d, [items + ARRAY_COUNT_OFFSET]  ; Save array count in novolatile register
+
+        ._search_for_item_loop:
+            cmp r13d, r14d
+            je ._end_search_for_item_loop  ; End itteration if all items in the array were checked
+
+            ; Get pointer to the current item
+            lea rcx, [items]
+            mov edx, r13d
+            fast_call dynamic_array.get
+
+            ; Compare names
+            lea rcx, [r12]
+            lea rdx, [rax]  ; Pointer to the name of the current item
+            fast_call string.compare
+
+            cmp rax, 1
+            je ._end_search_for_item_loop  ; Stop itteration if the item was found
+
+            inc r13d  ; Increment item index
+            jmp ._search_for_item_loop  ; Continue itteration
+
+        ._end_search_for_item_loop:
+
+        mov eax, r13d  ; Set up return value
+
+        cmp eax, r14d
+        jb ._end_find_item_by_name  ; Check if item index is below item count, meaning the item was found
+
+            mov rax, -1  ; return -1 otherwise
+
+        ._end_find_item_by_name:
+
+        ; Epilog
+        add rsp, 8  ; Restore the stack
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        mov r13, [rsp + 16]  ; Restore nonvolatile register
+        mov r14, [rsp + 24]  ; Restore nonvolatile register
+        ret            

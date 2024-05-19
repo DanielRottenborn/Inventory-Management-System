@@ -40,6 +40,38 @@ string:
         ret  ; Return current char pointer (string length)
 
 
+    ; Tests two strings for equality, returns 1 if strings are equal, 0 otherwise, args(QWORD NULL-terminated string pointer, QWORD NULL-terminated string pointer)    
+    .compare:
+        mov rax, 1  ; Initialize return value to true
+        mov rbx, 0  ; Initialize character offset to 0
+
+        ._compare_characters_loop:
+            mov r8b, [rcx + rbx]  ; Load characters
+            mov r9b, [rdx + rbx] 
+
+            cmp r8b, r9b
+            je ._check_terminators  ; Proceed if characters are equal
+
+                mov rax, 0  ; Return false otherwise
+                ret
+
+            ._check_terminators:
+
+            ; Check if either of the NULL terminators were reached
+            cmp r8b, NULL
+            je ._end_compare_characters_loop
+
+            cmp r9b, NULL
+            je ._end_compare_characters_loop
+
+            inc rbx  ; Increment character pointer
+            jmp ._compare_characters_loop  ; Proceed otherwise
+
+        ._end_compare_characters_loop:
+
+        ret
+        
+
     ; Removes unwanted characters, replaces tabs with whitespaces, args(QWORD NULL-terminated string pointer)    
     .format:
         mov rbx, rcx  ; Initialize character shift location to string pointer
