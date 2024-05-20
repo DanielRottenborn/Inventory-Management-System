@@ -37,12 +37,13 @@ table_empty:             db " | No Items Found", 63 - 14 + 1 dup " ", "|", 63 + 
 table_empty_contracted:  db " | No Items Found", 32 - 14 + 1 dup " ", "|", 32 + 2 dup " ", "|            |            |            |", LF, NULL
 
 messages:
-    .remark:           db " *Items in quantity less than 3 are highlighted in red.", LF
-                       db " *Type /help to get the list of available commands.", LF, LF, NULL
+    .remark: db " *Items in quantity less than 3 are highlighted in red.", LF
+             db " *Type /help to get the list of available commands.", LF, LF, NULL
 
     .command_list: db "List of available commands:", LF
                    db "    /add - add a new item", LF
-                   db "    /sell - sell a certain quantity of an item", LF
+                   db "    /sell - sell a certain quantity of items", LF
+                   db "    /order - order a certain quantity of items", LF
                    db "    /remove - remove an item", LF
                    db "    /expand - expand the item table", LF
                    db "    /contract - contract the item table", LF, LF, NULL
@@ -55,6 +56,7 @@ messages:
     .enter_quantity: db "Enter current item quantity: ", NULL 
     .enter_capacity: db "Enter available capacity: ", NULL
     .enter_number_to_sell: db "Enter the quantity to sell: ", NULL
+    .enter_number_to_order: db "Enter the quantity to order: ", NULL
 
     .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
@@ -62,12 +64,14 @@ messages:
     .entered_capacity_zero: db ERROR_COLOR, "Capacity can not be zero, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
     .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL
-    .quantity_too_low: db ERROR_COLOR, "Item quantity is too low to sell the number specified, try again: ", DEFAULT_COLOR, NULL
+    .quantity_too_low_to_sell: db ERROR_COLOR, "Item quantity is too low to sell the number specified, try again: ", DEFAULT_COLOR, NULL
+    .capacity_too_low_to_order: db ERROR_COLOR, "Remaining item capacity is too low to order the number specified, try again: ", DEFAULT_COLOR, NULL
 
 commands:
     .help: db "/help", NULL
     .add: db "/add", NULL
     .sell: db "/sell", NULL
+    .order: db "/order", NULL
     .remove: db "/remove", NULL
     .expand: db "/expand", NULL
     .contract: db "/contract", NULL
@@ -204,13 +208,30 @@ inventory_system:
         fast_call string.compare  
 
         cmp eax, 1
-        jne ._compare_to_remove  ; Check for equality
+        jne ._compare_to_order  ; Check for equality
 
             cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
             je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
 
             fast_call .sell_item  ; Execute sell item procedure
             jmp ._end_await_command
+
+        ._compare_to_order:
+
+        ; Compare input to the order item command
+        lea rcx, [rsp]
+        lea rdx, [commands.order]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._compare_to_remove  ; Check for equality
+
+            cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
+            je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
+
+            fast_call .order_item  ; Execute sell item procedure
+            jmp ._end_await_command
+
 
         ._compare_to_remove:
 
@@ -406,7 +427,7 @@ inventory_system:
         cmp eax, r13d
         jbe ._end_prompt_for_number_to_sell  ; Proceed if the number entered is less than or equal to the current quantity
 
-            lea rcx, [messages.quantity_too_low]
+            lea rcx, [messages.quantity_too_low_to_sell]
             fast_call console.print_string  ; Notify the user that the quantity is too low to sell this number of items and prompt again           
             
             jmp ._prompt_for_number_to_sell
@@ -420,6 +441,58 @@ inventory_system:
         mov edx, r12d
         fast_call dynamic_array.get  ; Get pointer to the selected item
         mov [rax + ITEM_QUANTITY_OFFSET], r13d  ; Update item quantity
+
+        ; Epilog
+        mov r12, [rsp + 16]  ; Restore nonvolatile register    
+        mov r13, [rsp + 24]  ; Restore nonvolatile register 
+        add rsp, 8  ; Align the stack to a 16-byte boundary
+        ret
+
+
+    ; Prompts the user to input item name, then increases the quantity of that item by the specified number
+    .order_item:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], r12  ; Save nonvolatile register    
+        mov [rsp + 24], r13  ; Save nonvolatile register 
+
+        ; Prompt for item name
+        lea rcx, [messages.enter_name]
+        fast_call console.print_string  ; Display prompt message
+
+        fast_call .select_item  ; Start item selection
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the selected item
+        mov r13d, [rax + ITEM_CAPACITY_OFFSET]  ; Save current item capacity in nonvolatile register
+        sub r13d, [rax + ITEM_QUANTITY_OFFSET]  ; Calculate remaining capacity
+
+        ; Prompt for the number of items to order
+        lea rcx, [messages.enter_number_to_order]
+        fast_call console.print_string  ; Display prompt message
+
+        ._prompt_for_number_to_order:
+
+        fast_call console.read_int  ; Read number from the console
+        cmp eax, r13d
+        jbe ._end_prompt_for_number_to_order  ; Proceed if the number entered is less than or equal to the remaining capacity
+
+            lea rcx, [messages.capacity_too_low_to_order]
+            fast_call console.print_string  ; Notify the user that the capacity is to low to order this number of items and prompt again           
+            
+            jmp ._prompt_for_number_to_order
+
+        ._end_prompt_for_number_to_order:
+
+        mov r13d, eax  ; Save the number to order in nonvolatile register
+
+        ; Increase item quantity
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the selected item
+        add [rax + ITEM_QUANTITY_OFFSET], r13d  ; Increase item quantity
 
         ; Epilog
         mov r12, [rsp + 16]  ; Restore nonvolatile register    
