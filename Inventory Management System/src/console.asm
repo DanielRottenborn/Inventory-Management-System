@@ -6,6 +6,7 @@
 
 ; Externals
 extern GetStdHandle  ; Returns standard console handles
+extern SetConsoleMode  ; Sets the console mode
 extern ReadConsoleA  ; Reads ANSI characters from standard input
 extern WriteConsoleA  ; Writes ANSI characters to standard output
 
@@ -38,6 +39,18 @@ console:
         ; Prolog
         sub rsp, 8  ; Align the stack to a 16-byte boundary
         mov [rsp + 16], rcx  ; Save string pointer in shadow space
+
+        ; Get output handle
+        mov ecx, -11  ; Set to -11 to receive an output handle
+        fast_call GetStdHandle  ; Returns standard output handle
+
+        mov rcx, rax  ; Set output handle
+        mov edx, 1 | 4  ; Enable processed output and virtual terminal processing
+        fast_call SetConsoleMode
+
+        ; Check for errors (NULL return)
+        cmp eax, NULL
+        je ._output_error
 
         lea rcx, [console_control.restore_text_color]
         fast_call .print_string  ; Apply default text color
@@ -95,7 +108,7 @@ console:
         call WriteConsoleA  ; Writes to the console
         add rsp, 48  ; Restore the stack
 
-        ; Check for errors (zero return)
+        ; Check for errors (NULL return)
         cmp eax, NULL
         je ._output_error
 
@@ -127,7 +140,7 @@ console:
         call WriteConsoleA  ; Writes to the console
         add rsp, 48  ; Restore the stack
 
-        ; Check for errors (zero return)
+        ; Check for errors (NULL return)
         cmp eax, NULL
         je ._output_error
 
@@ -258,7 +271,7 @@ console:
         call ReadConsoleA  ; Reads input
         add rsp, 48  ; Restore the stack
 
-        ; Check for errors (zero return)
+        ; Check for errors (NULL return)
         cmp eax, NULL
         je ._input_error
 
@@ -305,7 +318,7 @@ console:
                 call ReadConsoleA  ; Reads and flushes 64 characters
                 add rsp, 48  ; Restore the stack
 
-                ; Check for errors (zero return)
+                ; Check for errors (NULL return)
                 cmp eax, NULL
                 je ._input_error
 

@@ -42,7 +42,9 @@ messages:
 
     .command_list: db "List of available commands:", LF
                    db "    /add - add a new item", LF
-                   db "    /remove - remove an item", LF, LF, NULL
+                   db "    /remove - remove an item", LF
+                   db "    /expand - expand the item table", LF
+                   db "    /contract - contract the item table", LF, LF, NULL
 
     .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
 
@@ -63,6 +65,8 @@ commands:
     .help: db "/help", NULL
     .add: db "/add", NULL
     .remove: db "/remove", NULL
+    .expand: db "/expand", NULL
+    .contract: db "/contract", NULL
 
 
 ; Data section
@@ -196,12 +200,38 @@ inventory_system:
         fast_call string.compare  
 
         cmp eax, 1
-        jne ._invalid_command  ; Check for equality
+        jne ._compare_to_expand  ; Check for equality
 
             cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
             je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
 
             fast_call .remove_item  ; Execute remove_item procedure
+            jmp ._end_await_command
+        
+        ._compare_to_expand:
+
+        ; Compare input to the expand table command
+        lea rcx, [rsp]
+        lea rdx, [commands.expand]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._compare_to_contract ; Check for equality
+         
+            mov DWORD [item_table.contract], 0  ; Change table contraction setting
+            jmp ._end_await_command
+
+        ._compare_to_contract:        
+
+       ; Compare input to the contract table command
+        lea rcx, [rsp]
+        lea rdx, [commands.contract]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._invalid_command ; Check for equality
+
+            mov DWORD [item_table.contract], 1  ; Change table contraction setting            
             jmp ._end_await_command
 
         ._invalid_command:
