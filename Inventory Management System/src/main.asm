@@ -41,7 +41,8 @@ messages:
                        db " *Type /help to get the list of available commands.", LF, LF, NULL
 
     .command_list: db "List of available commands:", LF
-                   db "    /add - add a new item", LF, LF, NULL
+                   db "    /add - add a new item", LF
+                   db "    /remove - remove an item", LF, LF, NULL
 
     .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
 
@@ -51,14 +52,17 @@ messages:
     .enter_quantity: db "Enter current item quantity: ", NULL 
     .enter_capacity: db "Enter available capacity: ", NULL
 
+    .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_zero: db ERROR_COLOR, "Capacity can not be zero, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
-    .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL 
     .item_exists: db ERROR_COLOR, "This item already exists, try again: ", DEFAULT_COLOR, NULL
+    .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL
+    .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
     
 commands:
     .help: db "/help", NULL
     .add: db "/add", NULL
+    .remove: db "/remove", NULL
 
 
 ; Data section
@@ -155,9 +159,10 @@ inventory_system:
         lea rcx, [rsp]
         fast_call console.read_string  ; Read command from the console
 
+        ; Compare input to the help command
         lea rcx, [rsp]
         lea rdx, [commands.help]
-        fast_call string.compare  ; Compare input to the help command
+        fast_call string.compare
 
         cmp eax, 1
         jne ._compare_to_add  ; Check for equality
@@ -169,20 +174,45 @@ inventory_system:
 
         ._compare_to_add:
 
+        ; Compare input to the add item command
         lea rcx, [rsp]
         lea rdx, [commands.add]
-        fast_call string.compare  ; Compare input to the add item command
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._compare_to_remove  ; Check for equality
+
+            fast_call .add_item  ; Execute add_item procedure
+            jmp ._end_await_command
+
+        ._compare_to_remove:
+
+        ; Compare input to the remove item command
+        lea rcx, [rsp]
+        lea rdx, [commands.remove]
+        fast_call string.compare  
 
         cmp eax, 1
         jne ._invalid_command  ; Check for equality
 
-            fast_call .add_item  ; Execute add_item procedure
+            cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
+            je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
+
+            fast_call .remove_item  ; Execute remove_item procedure
             jmp ._end_await_command
 
         ._invalid_command:
 
             lea rcx, [messages.invalid_command]
             fast_call console.print_string  ; Notify the user that the command is invalid
+
+            add rsp, 8 + 64 ; Restore the stack
+            jmp .await_command ; Prompt the user again
+
+        ._command_requires_nonempty_inventory:
+
+            lea rcx, [messages.inventory_empty]
+            fast_call console.print_string  ; Notify the user that the command requires a non-empty inventory
 
             add rsp, 8 + 64 ; Restore the stack
             jmp .await_command ; Prompt the user again
@@ -291,6 +321,53 @@ inventory_system:
         fast_call dynamic_array.push
 
         add rsp, 8 + 144  ; Restore the stack
+        ret
+
+
+    ; Prompts user to input item name, then removes that item from the inventory and the display sequence
+    .remove_item:
+        sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
+
+        ; Prompt for item name
+        lea rcx, [messages.enter_name]
+        fast_call console.print_string  ; Display prompt message
+
+        ._prompt_for_item_to_remove:
+
+        lea rcx, [rsp]
+        fast_call console.read_string  ; Read name from the console
+
+        lea rcx, [rsp]
+        fast_call .find_item_by_name  ; Search for an item with entered name
+        mov [rsp], eax  ; Save item index
+
+        cmp rax, -1
+        jne ._remove_item  ; Proceed if the item is found
+
+            lea rcx, [messages.item_not_found]
+            fast_call console.print_string  ; Notify user that this name is not registered and prompt again otherwise 
+            
+            jmp ._prompt_for_item_to_remove   
+
+        ._remove_item:
+
+        lea rcx, [items]
+        mov edx, eax
+        fast_call dynamic_array.remove  ; Remove item from the items array
+
+        mov ecx, [rsp]  ; Retrieve the item index
+        fast_call .find_in_display_sequence  ; Search for an item index in display sequence
+
+        cmp rax, -1
+        je ._end_remove_item  ; Skip deletion from display sequence if the item is not currently displayed
+
+            lea rcx, [display_sequence]
+            mov edx, eax
+            fast_call dynamic_array.remove  ; Remove item index from the display sequence
+
+        ._end_remove_item:
+
+        add rsp, 8 + 64  ; Restore the stack
         ret
 
 
@@ -552,6 +629,53 @@ inventory_system:
             mov rax, -1  ; return -1 otherwise
 
         ._end_find_item_by_name:
+
+        ; Epilog
+        add rsp, 8  ; Restore the stack
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        mov r13, [rsp + 16]  ; Restore nonvolatile register
+        mov r14, [rsp + 24]  ; Restore nonvolatile register
+        ret
+        
+
+    ; Searches for an item index in display sequence, returns index of the found entry or QWORD -1 if not found, args(DWORD item index)
+    .find_in_display_sequence:
+        ; Prolog
+        mov [rsp + 8], r12   ; Save nonvolatile register
+        mov [rsp + 16], r13  ; Save nonvolatile register
+        mov [rsp + 24], r14  ; Save nonvolatile register
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov r12d, ecx  ; Save item index in nonvolatile register
+
+        mov r13d, 0  ; Initialize current display sequence index
+        mov r14d, [display_sequence + ARRAY_COUNT_OFFSET]  ; Save array count in novolatile register
+
+        ._search_for_index_loop:
+            cmp r13d, r14d
+            je ._end_search_for_index_loop  ; End itteration if all entries in the array were checked
+
+            ; Get pointer to the current index value
+            lea rcx, [display_sequence]
+            mov edx, r13d
+            fast_call dynamic_array.get
+
+            ; Compare indices
+            cmp [rax], r12d
+            je ._end_search_for_index_loop  ; Stop itteration if the item index was found
+
+            inc r13d  ; Increment current display sequence index
+            jmp ._search_for_index_loop  ; Continue itteration
+
+        ._end_search_for_index_loop:
+
+        mov eax, r13d  ; Set up return value
+
+        cmp eax, r14d
+        jb ._end_find_in_display_sequence  ; Check if display sequence index is below array member count, meaning the item index was found
+
+            mov rax, -1  ; return -1 otherwise
+
+        ._end_find_in_display_sequence:
 
         ; Epilog
         add rsp, 8  ; Restore the stack
