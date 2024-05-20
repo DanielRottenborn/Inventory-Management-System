@@ -34,13 +34,13 @@ ESC equ 27  ; Escape character
 ; Text section
 section .text
 
-; Copies memory from one location to another, args(QWORD destination pointer, QWORD source pointer, QWORD bytes amount)
+; Copies memory from one location to another, args(QWORD destination pointer, QWORD source pointer, QWORD number of bytes)
 mem_copy:
     mov rax, 0  ; Set offset to 0
 
     ._loop:
         cmp rax, r8
-        jae ._loop_end  ; Loop until the offset is equal to the amount
+        jae ._loop_end  ; Loop until the offset is equal to the number of bytes
 
         mov bl, [rdx + rax]  ; Moves a byte from source + offset to bl
         mov [rcx + rax], bl  ; Moves a byte from bl to destination + offset

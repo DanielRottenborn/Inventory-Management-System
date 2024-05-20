@@ -42,6 +42,7 @@ messages:
 
     .command_list: db "List of available commands:", LF
                    db "    /add - add a new item", LF
+                   db "    /sell - sell a certain quantity of an item", LF
                    db "    /remove - remove an item", LF
                    db "    /expand - expand the item table", LF
                    db "    /contract - contract the item table", LF, LF, NULL
@@ -53,17 +54,20 @@ messages:
     .enter_priority: db "Enter item priority: ", NULL
     .enter_quantity: db "Enter current item quantity: ", NULL 
     .enter_capacity: db "Enter available capacity: ", NULL
+    .enter_number_to_sell: db "Enter the quantity to sell: ", NULL
 
+    .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
+    .name_already_in_use: db ERROR_COLOR, "This name is already in use, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_zero: db ERROR_COLOR, "Capacity can not be zero, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
-    .item_exists: db ERROR_COLOR, "This item already exists, try again: ", DEFAULT_COLOR, NULL
     .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL
-    .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
-    
+    .quantity_too_low: db ERROR_COLOR, "Item quantity is too low to sell the number specified, try again: ", DEFAULT_COLOR, NULL
+
 commands:
     .help: db "/help", NULL
     .add: db "/add", NULL
+    .sell: db "/sell", NULL
     .remove: db "/remove", NULL
     .expand: db "/expand", NULL
     .contract: db "/contract", NULL
@@ -187,9 +191,25 @@ inventory_system:
         fast_call string.compare  
 
         cmp eax, 1
-        jne ._compare_to_remove  ; Check for equality
+        jne ._compare_to_sell  ; Check for equality
 
             fast_call .add_item  ; Execute add_item procedure
+            jmp ._end_await_command
+
+        ._compare_to_sell:
+
+        ; Compare input to the sell item command
+        lea rcx, [rsp]
+        lea rdx, [commands.sell]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._compare_to_remove  ; Check for equality
+
+            cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
+            je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
+
+            fast_call .sell_item  ; Execute sell item procedure
             jmp ._end_await_command
 
         ._compare_to_remove:
@@ -288,7 +308,7 @@ inventory_system:
         cmp rax, -1
         je ._prompt_for_item_category  ; Proceed if the name is unique
 
-            lea rcx, [messages.item_exists]
+            lea rcx, [messages.name_already_in_use]
             fast_call console.print_string  ; Notify the user that the entered name is already in use and prompt again otherwise 
             
             jmp ._prompt_for_item_name            
@@ -357,38 +377,73 @@ inventory_system:
         ret
 
 
-    ; Prompts the user to input item name, then removes that item from the inventory and the display sequence
-    .remove_item:
-        sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
+    ; Prompts the user to input item name, then reduces the quantity of that item by the specified number
+    .sell_item:
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], r12  ; Save nonvolatile register    
+        mov [rsp + 24], r13  ; Save nonvolatile register 
 
         ; Prompt for item name
         lea rcx, [messages.enter_name]
         fast_call console.print_string  ; Display prompt message
 
-        ._prompt_for_item_to_remove:
+        fast_call .select_item  ; Start item selection
+        mov r12d, eax  ; Save item index in nonvolatile register
 
-        lea rcx, [rsp]
-        fast_call console.read_string  ; Read name from the console
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the selected item
+        mov r13d, [rax + ITEM_QUANTITY_OFFSET]  ; Save current item quantity in nonvolatile register
 
-        lea rcx, [rsp]
-        fast_call .find_item_by_name  ; Search for an item with entered name
-        mov [rsp], eax  ; Save item index
+        ; Prompt for the number of items to sell
+        lea rcx, [messages.enter_number_to_sell]
+        fast_call console.print_string  ; Display prompt message
 
-        cmp rax, -1
-        jne ._remove_item  ; Proceed if the item is found
+        ._prompt_for_number_to_sell:
 
-            lea rcx, [messages.item_not_found]
-            fast_call console.print_string  ; Notify the user that this name is not registered and prompt again otherwise 
+        fast_call console.read_int  ; Read number from the console
+        cmp eax, r13d
+        jbe ._end_prompt_for_number_to_sell  ; Proceed if the number entered is less than or equal to the current quantity
+
+            lea rcx, [messages.quantity_too_low]
+            fast_call console.print_string  ; Notify the user that the quantity is too low to sell this number of items and prompt again           
             
-            jmp ._prompt_for_item_to_remove   
+            jmp ._prompt_for_number_to_sell
 
-        ._remove_item:
+        ._end_prompt_for_number_to_sell:
+
+        sub r13d, eax  ; Decrease current item quantity by the specified number
+
+        ; Update item quantity
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the selected item
+        mov [rax + ITEM_QUANTITY_OFFSET], r13d  ; Update item quantity
+
+        ; Epilog
+        mov r12, [rsp + 16]  ; Restore nonvolatile register    
+        mov r13, [rsp + 24]  ; Restore nonvolatile register 
+        add rsp, 8  ; Align the stack to a 16-byte boundary
+        ret
+
+
+    ; Prompts the user to input item name, then removes that item from the inventory and the display sequence
+    .remove_item:
+        sub rsp, 8  ; Align the stack to a 16-byte boundary        
+
+        ; Prompt for item name
+        lea rcx, [messages.enter_name]
+        fast_call console.print_string  ; Display prompt message
+
+        fast_call .select_item  ; Start item selection
+        mov [rsp + 16], eax  ; Save item index in shadow space
 
         lea rcx, [items]
         mov edx, eax
         fast_call dynamic_array.remove  ; Remove item from the items array
 
-        mov ecx, [rsp]  ; Retrieve the item index
+        mov ecx, [rsp + 16]  ; Retrieve the item index
         fast_call .find_in_display_sequence  ; Search for an item index in display sequence
 
         cmp rax, -1
@@ -400,10 +455,36 @@ inventory_system:
 
         ._end_remove_item:
 
+        add rsp, 8  ; Restore the stack
+        ret
+
+
+    ; Repetitively reads a name from the console and searches for the item with that name until it is found, returns the index of that item
+    .select_item:
+        sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary
+
+        lea rcx, [rsp]
+        fast_call console.read_string  ; Read name from the console
+
+        lea rcx, [rsp]
+        fast_call .find_item_by_name  ; Search for an item with entered name
+
+        cmp rax, -1
+        jne ._end_select_item  ; Proceed if the item is found
+
+            lea rcx, [messages.item_not_found]
+            fast_call console.print_string  ; Notify the user that this name is not registered and prompt again otherwise 
+            
+            add rsp, 8 + 64  ; Restore the stack
+            jmp .select_item  ; Continue
+
+        ._end_select_item:
+
         add rsp, 8 + 64  ; Restore the stack
         ret
 
 
+    ; Displays an inventory table
     .display_item_table:
         ; Prolog
         sub rsp, 8  ; Align the stack to a 16-byte boundary
@@ -509,6 +590,7 @@ inventory_system:
         
         ._end_display_item_table: 
 
+        ; Epilog
         mov r12, [rsp + 16]  ; Restore nonvolatile register
         add rsp, 8  ; Restore the stack
         ret
