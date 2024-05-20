@@ -45,8 +45,10 @@ messages:
                    db "    /sell - sell a certain quantity of items", LF
                    db "    /order - order a certain quantity of items", LF
                    db "    /remove - remove an item", LF
+                   db "    /clear - remove all items", LF
                    db "    /expand - expand the item table", LF
-                   db "    /contract - contract the item table", LF, LF, NULL
+                   db "    /contract - contract the item table", LF
+                   db "    /back - cancel the current action", LF, LF, NULL
 
     .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
 
@@ -73,8 +75,10 @@ commands:
     .sell: db "/sell", NULL
     .order: db "/order", NULL
     .remove: db "/remove", NULL
+    .clear: db "/clear", NULL
     .expand: db "/expand", NULL
     .contract: db "/contract", NULL
+    .back: db "/back", NULL
 
 
 ; Data section
@@ -129,6 +133,7 @@ inventory_system:
 
         ; Initialize console
         lea rcx, [window_title]
+        lea rdx, [commands.back]
         fast_call console.init
 
         ; Initialize item array
@@ -149,19 +154,23 @@ inventory_system:
     .run:
         sub rsp, 8  ; Align the stack to a 16-byte boundary 
 
-        lea rcx, [console_control.clear_screen]
-        fast_call console.print_string  ; Clear the screen
+        lea rcx, [._run]
+        fast_call console.capture_env_for_abort
 
-        fast_call .display_item_table  ; Display item table
+        ._run:
 
-        ; Display remark
-        lea rcx, [messages.remark]
-        fast_call console.print_string
+            lea rcx, [console_control.clear_screen]
+            fast_call console.print_string  ; Clear the screen
 
-        fast_call .await_command  ; Wait for user input
+            fast_call .display_item_table  ; Display item table
 
-        add rsp, 8  ; Restore the stack
-        jmp .run  ; Continue 
+            ; Display remark
+            lea rcx, [messages.remark]
+            fast_call console.print_string
+
+            fast_call .await_command  ; Wait for user input
+
+            jmp ._run  ; Continue 
 
 
     ; Prints out available commands, waits for user input, and executes specified command
@@ -241,12 +250,30 @@ inventory_system:
         fast_call string.compare  
 
         cmp eax, 1
-        jne ._compare_to_expand  ; Check for equality
+        jne ._compare_to_clear  ; Check for equality
 
             cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
             je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
 
             fast_call .remove_item  ; Execute remove_item procedure
+            jmp ._end_await_command
+
+        ._compare_to_clear:
+
+        ; Compare input to the clear inventory command
+        lea rcx, [rsp]
+        lea rdx, [commands.clear]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._compare_to_expand  ; Check for equality
+
+            lea rcx, [items]
+            fast_call dynamic_array.clear  ; Clear the item array
+
+            lea rcx, [display_sequence]
+            fast_call dynamic_array.clear  ; Clear the display sequence
+
             jmp ._end_await_command
         
         ._compare_to_expand:

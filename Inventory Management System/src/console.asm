@@ -28,17 +28,49 @@ console_control:
     .highlight_background: db HIGHLIGHT_BG_COLOR, NULL
 
 
+; Data section
+sectalign 4
+section .data
+
+    alignb 4
+    preserved_env.saved: dd 0  ; Bool, indicates if the environment was previously saved to restore with the abort command
+
+
+; Bss section
+sectalign 8
+section .bss
+
+alignb 8
+preserved_env:
+    .r12_register: resq 1
+    .r13_register: resq 1
+    .r14_register: resq 1
+    .r15_register: resq 1
+    .rdi_register: resq 1 
+    .rsi_register: resq 1
+    .rbx_register: resq 1
+    .rbp_register: resq 1
+    .rsp_register: resq 1
+
+    .return_address: resq 1
+
+abort_command: resq 1  ; Pointer to the command string used to abort the current action
+
+
 ; Text section
 section .text
 
 ; Console IO functionality
 console:
 
-    ; Change window name and apply default text colors, args (QWORD window name string pointer)
+    ; Change window name, apply default text colors, and register abort command, 
+    ; Args (QWORD window name string pointer, QWORD abort command string pointer)
     .init:
         ; Prolog
         sub rsp, 8  ; Align the stack to a 16-byte boundary
         mov [rsp + 16], rcx  ; Save string pointer in shadow space
+
+        mov [abort_command], rdx  ; Save abortcommand
 
         ; Get output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
@@ -67,6 +99,43 @@ console:
         add rsp, 8  ; Restore the stack
         ret
 
+
+    ; Captures current environment and saves an address to jump to in case user aborts current action by a designated command,
+    ; Args(QWORD return address)
+    .capture_env_for_abort:
+        ; Save nonvolatile registers
+        mov [preserved_env.r12_register], r12
+        mov [preserved_env.r13_register], r13
+        mov [preserved_env.r14_register], r14
+        mov [preserved_env.r15_register], r15
+        mov [preserved_env.rdi_register], rdi
+        mov [preserved_env.rsi_register], rsi
+        mov [preserved_env.rbx_register], rbx
+        mov [preserved_env.rbp_register], rbp
+        mov [preserved_env.rsp_register], rsp
+        sub QWORD [preserved_env.rsp_register],  40  ; Compensate for rsp changing after this function was called
+
+        mov [preserved_env.return_address], rcx  ; Save the return address
+
+        mov DWORD [preserved_env.saved], 1  ; Allow to use the abort command
+        ret
+
+
+    ; Restores saved environment
+    ._restore_env:
+        ; Restore nonvolatile registers
+        mov r12, [preserved_env.r12_register]
+        mov r13, [preserved_env.r13_register]
+        mov r14, [preserved_env.r14_register]
+        mov r15, [preserved_env.r15_register]
+        mov rdi, [preserved_env.rdi_register]
+        mov rsi, [preserved_env.rsi_register]
+        mov rbx, [preserved_env.rbx_register]
+        mov rbp, [preserved_env.rbp_register]
+        mov rsp, [preserved_env.rsp_register]
+
+        jmp [preserved_env.return_address]  ; Jump to the saved address
+ 
 
     ; Prints a space-padded integer, args(DWORD unsigned integer)
     .print_int:
@@ -217,30 +286,53 @@ console:
     ;Displays a warning message in case input exceeds max length
     .read_string:
         ; Prolog
-        sub rsp, 8  ; Align the stack to a 16-byte boundary
-        mov [rsp + 16], rcx  ; Save destination buffer pointer in shadow space
+        sub rsp, 64 + 8  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary
+        mov [rsp + 16 + 64], rcx  ; Save destination buffer pointer in shadow space
 
         ; Read raw input string
         fast_call ._read_raw
-        mov [rsp + 24], rax  ; Save ._read_raw return value
+        mov [rsp + 24 + 64], rax  ; Save ._read_raw return value
 
         ; Format the string
-        mov rcx, [rsp + 16]  ; Retrieve the buffer pointer
+        mov rcx, [rsp + 16 + 64]  ; Retrieve the buffer pointer
         fast_call string.format  ; Formats the string
 
         ; Trim the string
-        mov rcx, [rsp + 16]  ; Retrieve the buffer pointer
+        mov rcx, [rsp + 16 + 64]  ; Retrieve the buffer pointer
         fast_call string.trim  ; Trims the string
 
-        cmp QWORD [rsp + 24], 0  ; Check if input size was larger than max supported input length
-        jne ._end_read_string  ; Skip warning if it wasn't
+        cmp QWORD [rsp + 24 + 64], 0  ; Check if input size was larger than max supported input length
+        jne ._check_for_abort_command  ; Skip warning if it wasn't
 
             lea rcx, [console_messages.input_too_large]  ; Notify the user that input string will be trimmed
             fast_call .print_string  ; Print warning message
 
+        ._check_for_abort_command:
+
+        lea rcx, [rsp]
+        mov rdx, [rsp + 16 + 64]  ; Retrieve the buffer pointer
+        fast_call string.copy  ; Copy resulting string to the temporary buffer
+
+        ; Lowercase the temporary string
+        lea rcx, [rsp]
+        fast_call string.lower
+
+        ; Compare input to the abort command
+        lea rcx, [rsp]
+        mov rdx, [abort_command]
+        fast_call string.compare
+
+        cmp DWORD [preserved_env.saved], 1
+        jne ._end_read_string  ; Check if the environment to return to was previously saved 
+        
+        cmp eax, 1
+        jne ._end_read_string  ; Check if user entered the abort command
+
+            fast_call ._restore_env  ; restore the environment in case the user entered the abort command
+        
         ._end_read_string:
 
-        add rsp, 8  ; Restore the stack
+        add rsp, 64 + 8  ; Restore the stack
         ret
 
 
