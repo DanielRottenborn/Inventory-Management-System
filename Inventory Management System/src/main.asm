@@ -159,6 +159,9 @@ inventory_system:
         lea rcx, [rsp]
         fast_call console.read_string  ; Read command from the console
 
+        lea rcx, [rsp]
+        fast_call string.lower  ; Convert entered command into lowercase
+
         ; Compare input to the help command
         lea rcx, [rsp]
         lea rdx, [commands.help]

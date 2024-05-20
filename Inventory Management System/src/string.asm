@@ -70,6 +70,34 @@ string:
         ._end_compare_characters_loop:
 
         ret
+
+
+    ; Converts all uppercase letters into lowercase, args(QWORD NULL-terminated string pointer) 
+    .lower:
+        ; Itterate through all characters
+        ._lower_loop:
+            mov al, [rcx]  ; Get current character
+
+            cmp al, NULL  ; Check if current character is a NULL terminator
+            je ._end_lower_loop
+
+            cmp al, 65  ; Check if current character is not an uppercase letter
+            jb ._lower_continue
+
+            cmp al, 90 ; Check if current character is not an uppercase letter
+            ja ._lower_continue
+                
+                add al, 32  ; Convert current character to a lowercase equivalent
+                mov BYTE [rcx], al  ; Update the string
+
+            ._lower_continue:
+
+            inc rcx  ; Increment character pointer
+            jmp ._lower_loop  ; Continue itteration
+
+        ._end_lower_loop:
+
+        ret
         
 
     ; Removes unwanted characters, replaces tabs with whitespaces, args(QWORD NULL-terminated string pointer)    
