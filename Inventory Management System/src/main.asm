@@ -21,8 +21,8 @@ section .rodata
 window_title: db "Inventory Management System - TP065500", NULL
 
 table_border:
-    .horizontal:            db " ", 172 dup "-", LF, NULL
-    .horizontal_contracted: db " ", 110 dup "-", LF, NULL
+    .horizontal:            db " +", 170 dup "-", "+", LF, NULL
+    .horizontal_contracted: db " +", 108 dup "-", "+", LF, NULL
     .horizontal_separator:            db " |", 63 + 2 dup "-", "|", 63 + 2 dup "-", "|------------|------------|------------|", LF, NULL
     .horizontal_separator_contracted: db " |", 32 + 2 dup "-", "|", 32 + 2 dup "-", "|------------|------------|------------|", LF, NULL 
     .left: db " |", NULL
@@ -503,32 +503,63 @@ inventory_system:
 
     ; Prompts the user to input item name, then removes that item from the inventory and the display sequence
     .remove_item:
-        sub rsp, 8  ; Align the stack to a 16-byte boundary        
+        ; Prolog
+        sub rsp, 8  ; Align the stack to a 16-byte boundary
+        mov [rsp + 16], r12  ; Save nonvolatile register    
+        mov [rsp + 24], r13  ; Save nonvolatile register         
+        mov [rsp + 32], r14  ; Save nonvolatile register
 
         ; Prompt for item name
         lea rcx, [messages.enter_name]
         fast_call console.print_string  ; Display prompt message
 
         fast_call .select_item  ; Start item selection
-        mov [rsp + 16], eax  ; Save item index in shadow space
+        mov r12d, eax  ; Save item index in nonvolatile register
 
         lea rcx, [items]
         mov edx, eax
         fast_call dynamic_array.remove  ; Remove item from the items array
 
-        mov ecx, [rsp + 16]  ; Retrieve the item index
+        mov ecx, r12d  ; Retrieve the item index
         fast_call .find_in_display_sequence  ; Search for an item index in display sequence
 
         cmp rax, -1
-        je ._end_remove_item  ; Skip deletion from display sequence if the item is not currently displayed
+        je ._update_display_sequence_indices  ; Skip deletion from display sequence if the item is not currently displayed
 
             lea rcx, [display_sequence]
             mov edx, eax
             fast_call dynamic_array.remove  ; Remove item index from the display sequence
 
-        ._end_remove_item:
+        ._update_display_sequence_indices:
 
-        add rsp, 8  ; Restore the stack
+        mov r13d, 0  ; Initialize display sequence index
+        mov r14d, [display_sequence + ARRAY_COUNT_OFFSET]  ; Save display sequence count in nonvolatile register
+
+        ._update_display_sequence_indices_loop:     
+
+            cmp r13d, r14d
+            jae ._end_update_display_sequence_indices_loop  ; Stop itteration if all display sequence entries were processed
+            
+            lea rcx, [display_sequence]
+            mov edx, r13d
+            call dynamic_array.get  ; Get next display sequence entry
+
+            cmp [rax], r12d 
+            jb ._continue_update_display_sequence_indices_loop  ; Skip correction if current item index is less than that of the deleted item
+
+                dec DWORD [rax]  ; Decrement item index otherwise
+
+            ._continue_update_display_sequence_indices_loop:
+            
+            inc r13d  ; Increment display sequence index
+            jmp ._update_display_sequence_indices_loop  ; Continue itteration
+
+        ._end_update_display_sequence_indices_loop:
+
+        mov r12, [rsp + 16]  ; Restore nonvolatile register    
+        mov r13, [rsp + 24]  ; Restore nonvolatile register 
+        mov r14, [rsp + 32]  ; Restore nonvolatile register 
+        add rsp, 8  ; Align the stack to a 16-byte boundary
         ret
 
 
