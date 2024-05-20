@@ -137,7 +137,7 @@ console:
 
     ;Uses the read_string procedure and then parses and returns a 32-bit integer
     ;Displays a warning message in case input is larger than max unsigned 32-bit integer and returns max int instead
-    ;Displays a warning message in case input cant be parsed and prompts user again
+    ;Displays a warning message in case input cant be parsed and prompts the user again
     .read_int:
         ; Read formatted input string
         sub rsp, 64 + 8  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary
@@ -182,7 +182,7 @@ console:
    
         ._end_parse_digits_loop:
 
-        ; Verify if at least one digit was parsed, display a warning message and prompt user again otherwise
+        ; Verify if at least one digit was parsed, display a warning message and prompt the user again otherwise
         cmp rbx, rsp
         jne ._end_read_int
 
@@ -190,7 +190,7 @@ console:
             lea rcx, [console_messages.integer_parse_failed]
             fast_call .print_string
             
-            ;Prompt user again
+            ;Prompt the user again
             add rsp, 64 + 8 ; Restore the stack
             jmp .read_int
 

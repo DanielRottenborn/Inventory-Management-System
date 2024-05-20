@@ -226,7 +226,7 @@ inventory_system:
         ret
 
 
-    ; Prompts user to input item info, then adds a new item to the system
+    ; Prompts the user to input item info, then adds a new item to the system
     .add_item:
         sub rsp, 8 + 144  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
 
@@ -246,7 +246,7 @@ inventory_system:
         jne ._verify_name_uniqueness
 
             lea rcx, [messages.empty_name]
-            fast_call console.print_string  ; Notify user that the entered name should not be empty prompt again otherwise 
+            fast_call console.print_string  ; Notify the user that the entered name should not be empty prompt again otherwise 
             
             jmp ._prompt_for_item_name
 
@@ -259,7 +259,7 @@ inventory_system:
         je ._prompt_for_item_category  ; Proceed if the name is unique
 
             lea rcx, [messages.item_exists]
-            fast_call console.print_string  ; Notify user that the entered name is already in use and prompt again otherwise 
+            fast_call console.print_string  ; Notify the user that the entered name is already in use and prompt again otherwise 
             
             jmp ._prompt_for_item_name            
 
@@ -296,7 +296,7 @@ inventory_system:
         ja ._check_against_quantity  ; Check if capacity is not zero and proceed
 
             lea rcx, [messages.entered_capacity_zero]
-            fast_call console.print_string  ; Notify user that entered capacity is too low and prompt again otherwise 
+            fast_call console.print_string  ; Notify the user that entered capacity is too low and prompt again otherwise 
             
             jmp ._prompt_for_capacity
 
@@ -306,7 +306,7 @@ inventory_system:
         jae ._push_new_item  ; Check if capacity is equal to or greater than quantity entered and proceed
 
             lea rcx, [messages.entered_capacity_too_low]
-            fast_call console.print_string  ; Notify user that entered capacity is too low and prompt again otherwise 
+            fast_call console.print_string  ; Notify the user that entered capacity is too low and prompt again otherwise 
             
             jmp ._prompt_for_capacity
 
@@ -327,7 +327,7 @@ inventory_system:
         ret
 
 
-    ; Prompts user to input item name, then removes that item from the inventory and the display sequence
+    ; Prompts the user to input item name, then removes that item from the inventory and the display sequence
     .remove_item:
         sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
 
@@ -348,7 +348,7 @@ inventory_system:
         jne ._remove_item  ; Proceed if the item is found
 
             lea rcx, [messages.item_not_found]
-            fast_call console.print_string  ; Notify user that this name is not registered and prompt again otherwise 
+            fast_call console.print_string  ; Notify the user that this name is not registered and prompt again otherwise 
             
             jmp ._prompt_for_item_to_remove   
 
