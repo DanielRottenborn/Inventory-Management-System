@@ -62,6 +62,7 @@ messages:
     .change_category: db "Change category to: ", NULL
     .change_priority: db "Change priority to: ", NULL
     .change_quantity: db "Change quantity to: ", NULL
+    .change_capacity: db "Change capacity to: ", NULL
 
     ; Error messages
     .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
@@ -418,20 +419,9 @@ inventory_system:
         lea rcx, [messages.enter_capacity]
         fast_call console.print_string  ; Display prompt message
 
-        ._prompt_for_capacity:
-
-        fast_call console.read_int  ; Read capacity from the console
+        mov ecx, [rsp + ITEM_QUANTITY_OFFSET]  ; Use current item quantity to validate
+        fast_call .prompt_for_capacity  ; Prompt for item capacity
         mov [rsp + ITEM_CAPACITY_OFFSET], eax  ; Save in temporary buffer
-
-        cmp eax, [rsp + ITEM_QUANTITY_OFFSET]
-        jae ._push_new_item  ; Check if capacity is equal to or greater than quantity entered and proceed
-
-            lea rcx, [messages.entered_capacity_too_low]
-            fast_call console.print_string  ; Notify the user that entered capacity is too low and prompt again otherwise 
-            
-            jmp ._prompt_for_capacity
-
-        ._push_new_item:
 
         ; Push new item to the array
         lea rcx, [items]
@@ -643,7 +633,8 @@ inventory_system:
         cmp eax, 1
         jne ._invalid_attribute  ; Check for equality
 
-            ; Action here
+            mov eax, r12d
+            fast_call .modify_capacity
 
             jmp ._end_select_attribute_to_modify  ; Proceed to return
 
@@ -759,6 +750,35 @@ inventory_system:
         ret
 
 
+    ; Prompts user for updated capacity, then modifies the selected item, args(DWORD item index)
+    .modify_capacity:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        mov [rsp + 16], r13  ; Save nonvolatile register 
+        sub rsp, 8  ; Align the stack to a 16-byte boundary         
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        ; Prompt for updated item capacity
+        lea rcx, [messages.change_capacity]
+        fast_call console.print_string  ; Display prompt message
+
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the item
+        mov r13, rax  ; Save pointer to the item in nonvolatile register
+        
+        mov ecx, [r13 + ITEM_QUANTITY_OFFSET]  ; Use current item quantity to validate
+        fast_call .prompt_for_capacity  ; Prompt for updated item capacity
+
+        mov [r13 + ITEM_CAPACITY_OFFSET], rax  ; Modify the capacity attribute
+  
+        ; Epilog
+        add rsp, 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        mov r13, [rsp + 16]  ; Restore nonvolatile register
+        ret
+
+
     ; Prompts the user to input item name, then removes that item from the inventory and the display sequence
     .remove_item:
         ; Prolog
@@ -843,6 +863,33 @@ inventory_system:
         ._end_select_item:
 
         add rsp, 8 + 64  ; Restore the stack
+        ret
+
+
+    ; Prompts user for capacity until it passes validation, returns entered capacity, args(DWORD current item quantity)
+    .prompt_for_capacity:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        sub rsp, 8  ; Align the stack to a 16-byte boundary         
+        mov r12d, ecx  ; Save current item quantity in nonvolatile register
+
+        ._read_and_validate_capacity:
+
+        fast_call console.read_int  ; Read capacity from the console
+ 
+        cmp eax, r12d
+        jae ._end_read_and_validate_capacity  ; Check if capacity is equal to or greater than current item quantity and proceed
+
+            lea rcx, [messages.entered_capacity_too_low]
+            fast_call console.print_string  ; Notify the user that entered capacity is too low and prompt again otherwise 
+            
+            jmp ._read_and_validate_capacity
+
+        ._end_read_and_validate_capacity:
+
+        ; Epilog
+        add rsp, 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
         ret
 
 
