@@ -173,7 +173,7 @@ console:
         mov r8d, 10  ; Print 10 characters
         lea r9, [rsp + 24 + 32]  ; The procedure will save the number of characters it will have written in shadow space
         sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
-        mov QWORD [rsp], NULL  ; Reserved NULL parameter
+        mov QWORD [rsp + 32], NULL  ; Reserved NULL parameter
         call WriteConsoleA  ; Writes to the console
         add rsp, 48  ; Restore the stack
 
@@ -205,7 +205,7 @@ console:
         mov r8d, [rsp + 24]  ; Retrieve string length
         lea r9, [rsp + 32]  ; The procedure will save the number of characters it will have written in shadow space
         sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
-        mov QWORD [rsp], NULL  ; Reserved NULL parameter
+        mov QWORD [rsp + 32], NULL  ; Reserved NULL parameter
         call WriteConsoleA  ; Writes to the console
         add rsp, 48  ; Restore the stack
 
@@ -359,7 +359,7 @@ console:
         mov r8d, 66  ; Read 63 characters + CR + LF + another character to see if input is greater tan 63 characters
         lea r9, [rsp + 24 + 80]  ; The procedure will save the number of characters it will have read in shadow space
         sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
-        mov QWORD [rsp], NULL  ; Input control argument should be NULL for ANSI mode
+        mov QWORD [rsp + 32], NULL  ; Input control argument should be NULL for ANSI mode
         call ReadConsoleA  ; Reads input
         add rsp, 48  ; Restore the stack
 
@@ -406,7 +406,7 @@ console:
                 mov r8d, 66  ; Read 66 characters
                 lea r9, [rsp + 24 + 80]  ; The procedure will save the number of characters it will have read in shadow space
                 sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
-                mov QWORD [rsp], NULL  ; Input control argument should be NULL for ANSI mode
+                mov QWORD [rsp + 32], NULL  ; Input control argument should be NULL for ANSI mode
                 call ReadConsoleA  ; Reads and flushes 64 characters
                 add rsp, 48  ; Restore the stack
 

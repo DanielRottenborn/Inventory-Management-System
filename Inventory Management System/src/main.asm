@@ -154,6 +154,7 @@ inventory_system:
     .run:
         sub rsp, 8  ; Align the stack to a 16-byte boundary 
 
+        ; This works under the assumption that all user input has been processed before any action irreversibly modifies the program state 
         lea rcx, [._run]
         fast_call console.capture_env_for_abort
 
@@ -267,6 +268,9 @@ inventory_system:
 
         cmp eax, 1
         jne ._compare_to_expand  ; Check for equality
+
+            cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
+            je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
 
             lea rcx, [items]
             fast_call dynamic_array.clear  ; Clear the item array

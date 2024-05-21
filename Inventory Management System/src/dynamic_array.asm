@@ -121,7 +121,7 @@ dynamic_array:
         add rax, [rcx]  ; Add array base pointer to offset
 
         ret
-
+        
 
     ; Removes member by index, shifts everything past by 1, args(QWORD array struct pointer, DWORD index)
     .remove:
