@@ -44,6 +44,7 @@ messages:
                    db "    /add - add a new item", LF
                    db "    /sell - sell a certain quantity of items", LF
                    db "    /order - order a certain quantity of items", LF
+                   db "    /modify - modify an item", LF
                    db "    /remove - remove an item", LF
                    db "    /clear - remove all items", LF
                    db "    /expand - expand the item table", LF
@@ -59,6 +60,7 @@ messages:
     .enter_capacity: db "Enter available capacity: ", NULL
     .enter_number_to_sell: db "Enter the quantity to sell: ", NULL
     .enter_number_to_order: db "Enter the quantity to order: ", NULL
+    .enter_attribute_to_modify: db "Enter the attribute to be modified: ", NULL
 
     .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
@@ -68,17 +70,26 @@ messages:
     .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL
     .quantity_too_low_to_sell: db ERROR_COLOR, "Item quantity is too low to sell the number specified, try again: ", DEFAULT_COLOR, NULL
     .capacity_too_low_to_order: db ERROR_COLOR, "Remaining item capacity is too low to order the number specified, try again: ", DEFAULT_COLOR, NULL
+    .invalid_attribute: db ERROR_COLOR, "Enter a valid atttribute (name, category, priority, quantity, or capacity): ", DEFAULT_COLOR, NULL
 
 commands:
     .help: db "/help", NULL
     .add: db "/add", NULL
     .sell: db "/sell", NULL
     .order: db "/order", NULL
+    .modify: db "/modify", NULL
     .remove: db "/remove", NULL
     .clear: db "/clear", NULL
     .expand: db "/expand", NULL
     .contract: db "/contract", NULL
     .back: db "/back", NULL
+
+attr_names:
+    .name: db "name", NULL
+    .category: db "category", NULL
+    .priority: db "priority", NULL
+    .quantity: db "quantity", NULL
+    .capacity: db "capacity", NULL
 
 
 ; Data section
@@ -234,7 +245,7 @@ inventory_system:
         fast_call string.compare  
 
         cmp eax, 1
-        jne ._compare_to_remove  ; Check for equality
+        jne ._compare_to_modify  ; Check for equality
 
             cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
             je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
@@ -242,6 +253,21 @@ inventory_system:
             fast_call .order_item  ; Execute sell item procedure
             jmp ._end_await_command
 
+        ._compare_to_modify:
+
+        ; Compare input to the modify item command
+        lea rcx, [rsp]
+        lea rdx, [commands.modify]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._compare_to_remove  ; Check for equality
+
+            cmp DWORD [items + ARRAY_COUNT_OFFSET], 0
+            je ._command_requires_nonempty_inventory  ; Check if inventory is not empty
+
+            fast_call .modify_item  ; Execute sell item procedure
+            jmp ._end_await_command
 
         ._compare_to_remove:
 
@@ -529,6 +555,114 @@ inventory_system:
         mov r12, [rsp + 16]  ; Restore nonvolatile register    
         mov r13, [rsp + 24]  ; Restore nonvolatile register 
         add rsp, 8  ; Align the stack to a 16-byte boundary
+        ret
+
+
+    ; Prompts the user to input item name, then prompts to select the attribute to be modified and selects appropriate action
+    .modify_item:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register 
+        sub rsp, 8 + 64 ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary 
+
+        ; Prompt for item name
+        lea rcx, [messages.enter_name]
+        fast_call console.print_string  ; Display prompt message
+
+        fast_call .select_item  ; Start item selection
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        ; Prompt for attribute name
+        lea rcx, [messages.enter_attribute_to_modify]
+        fast_call console.print_string  ; Display prompt message
+
+        ._select_attribute_to_modify:
+
+        lea rcx, [rsp]
+        fast_call console.read_string  ; Read command from the console
+
+        lea rcx, [rsp]
+        fast_call string.lower  ; Convert entered command into lowercase
+
+        ; Compare input to the name attribute
+        lea rcx, [rsp]
+        lea rdx, [attr_names.name]
+        fast_call string.compare
+
+        cmp eax, 1
+        jne ._compare_to_category  ; Check for equality
+
+            ; Action here
+
+            jmp ._end_select_attribute_to_modify  ; Proceed to return
+
+        ._compare_to_category:
+
+        ; Compare input to the category attribute
+        lea rcx, [rsp]
+        lea rdx, [attr_names.category]
+        fast_call string.compare
+
+        cmp eax, 1
+        jne ._compare_to_priority  ; Check for equality
+
+            ; Action here
+
+            jmp ._end_select_attribute_to_modify  ; Proceed to return
+
+        ._compare_to_priority:
+
+        ; Compare input to the priority attribute
+        lea rcx, [rsp]
+        lea rdx, [attr_names.priority]
+        fast_call string.compare
+
+        cmp eax, 1
+        jne ._compare_to_quantity  ; Check for equality
+
+            ; Action here
+
+            jmp ._end_select_attribute_to_modify  ; Proceed to return
+
+        ._compare_to_quantity:
+
+        ; Compare input to the quantity attribute
+        lea rcx, [rsp]
+        lea rdx, [attr_names.quantity]
+        fast_call string.compare
+
+        cmp eax, 1
+        jne ._compare_to_capacity  ; Check for equality
+
+            ; Action here
+
+            jmp ._end_select_attribute_to_modify  ; Proceed to return
+
+        ._compare_to_capacity:
+
+        ; Compare input to the capacity attribute
+        lea rcx, [rsp]
+        lea rdx, [attr_names.capacity]
+        fast_call string.compare
+
+        cmp eax, 1
+        jne ._invalid_attribute  ; Check for equality
+
+            ; Action here
+
+            jmp ._end_select_attribute_to_modify  ; Proceed to return
+
+        ._invalid_attribute:
+
+            lea rcx, [messages.invalid_attribute]
+            fast_call console.print_string  ; Notify the user that the attribute name is invalid            
+
+            jmp ._select_attribute_to_modify  ; Prompt the user again
+
+        ._end_select_attribute_to_modify:
+
+        ; Epilog
+        add rsp, 8 + 64 ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register 
         ret
 
 
