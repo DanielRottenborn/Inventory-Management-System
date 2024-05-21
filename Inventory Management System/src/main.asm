@@ -82,7 +82,6 @@ messages:
     .capacity_too_low_to_order: db ERROR_COLOR, "Remaining item capacity is too low to order the number specified, try again: ", DEFAULT_COLOR, NULL
     .invalid_attribute: db ERROR_COLOR, "Enter a valid atttribute (name, category, priority, quantity, or capacity): ", DEFAULT_COLOR, NULL
 
-
 commands:
     .help: db "/help", NULL
     .add: db "/add", NULL
@@ -828,7 +827,7 @@ inventory_system:
             
             lea rcx, [display_sequence]
             mov edx, r13d
-            call dynamic_array.get  ; Get next display sequence entry
+            fast_call dynamic_array.get  ; Get next display sequence entry
 
             cmp [rax], r12d 
             jb ._continue_update_display_sequence_indices_loop  ; Skip correction if current item index is less than that of the deleted item
