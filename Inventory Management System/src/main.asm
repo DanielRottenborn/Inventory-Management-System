@@ -51,14 +51,18 @@ messages:
                    db "    /contract - contract the item table", LF
                    db "    /back - cancel the current action", LF, LF, NULL
 
-    .enter_name:     db "Enter item name: ", NULL
+    ; Input messages
+    .enter_item_name:     db "Enter item name: ", NULL
     .enter_category: db "Enter item category: ", NULL
     .enter_priority: db "Enter item priority: ", NULL
     .enter_quantity: db "Enter current item quantity: ", NULL 
     .enter_capacity: db "Enter available capacity: ", NULL
-    .enter_number_to_sell: db "Enter the quantity to sell: ", NULL
-    .enter_number_to_order: db "Enter the quantity to order: ", NULL
+
+    .enter_quantity_to_sell: db "Enter the quantity to sell: ", NULL
+    .enter_quantity_to_order: db "Enter the quantity to order: ", NULL
+
     .enter_attribute_to_modify: db "Enter the attribute to be modified: ", NULL
+    .change_item_name: db "Change item name to: ", NULL
     .change_category: db "Change category to: ", NULL
     .change_priority: db "Change priority to: ", NULL
     .change_quantity: db "Change quantity to: ", NULL
@@ -67,14 +71,17 @@ messages:
     ; Error messages
     .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
     .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL
+
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
     .name_already_in_use: db ERROR_COLOR, "This name is already in use, try again: ", DEFAULT_COLOR, NULL
+    .entered_quantity_too_high: db ERROR_COLOR, "Entered quantity is to high for the current capacity, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low for the current item quantity, try again: ", DEFAULT_COLOR, NULL
+
     .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL
     .quantity_too_low_to_sell: db ERROR_COLOR, "Item quantity is too low to sell the number specified, try again: ", DEFAULT_COLOR, NULL
     .capacity_too_low_to_order: db ERROR_COLOR, "Remaining item capacity is too low to order the number specified, try again: ", DEFAULT_COLOR, NULL
     .invalid_attribute: db ERROR_COLOR, "Enter a valid atttribute (name, category, priority, quantity, or capacity): ", DEFAULT_COLOR, NULL
-    .entered_quantity_too_high: db ERROR_COLOR, "Entered quantity is to high for the current capacity, try again: ", DEFAULT_COLOR, NULL
+
 
 commands:
     .help: db "/help", NULL
@@ -363,39 +370,10 @@ inventory_system:
         sub rsp, 8 + 144  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
 
         ; Prompt for item name
-        lea rcx, [messages.enter_name]
+        lea rcx, [messages.enter_item_name]
         fast_call console.print_string  ; Display prompt message
-
-        ._prompt_for_item_name:
-
         lea rcx, [rsp]
-        fast_call console.read_string  ; Read name from the console
-
-        lea rcx, [rsp]
-        fast_call string.len  ; Check entered name length
-
-        cmp rax, 0
-        jne ._verify_name_uniqueness
-
-            lea rcx, [messages.empty_name]
-            fast_call console.print_string  ; Notify the user that the entered name should not be empty prompt again otherwise 
-            
-            jmp ._prompt_for_item_name
-
-        ._verify_name_uniqueness:
-
-        lea rcx, [rsp]
-        fast_call .find_item_by_name  ; Search for items with similar name
-
-        cmp rax, -1
-        je ._prompt_for_item_category  ; Proceed if the name is unique
-
-            lea rcx, [messages.name_already_in_use]
-            fast_call console.print_string  ; Notify the user that the entered name is already in use and prompt again otherwise 
-            
-            jmp ._prompt_for_item_name            
-
-        ._prompt_for_item_category:
+        fast_call .prompt_for_new_item_name  ; Prompt for new item name
 
         ; Prompt for item category
         lea rcx, [messages.enter_category]
@@ -446,7 +424,7 @@ inventory_system:
         mov [rsp + 24], r13  ; Save nonvolatile register 
 
         ; Prompt for item name
-        lea rcx, [messages.enter_name]
+        lea rcx, [messages.enter_item_name]
         fast_call console.print_string  ; Display prompt message
 
         fast_call .select_item  ; Start item selection
@@ -458,7 +436,7 @@ inventory_system:
         mov r13d, [rax + ITEM_QUANTITY_OFFSET]  ; Save current item quantity in nonvolatile register
 
         ; Prompt for the number of items to sell
-        lea rcx, [messages.enter_number_to_sell]
+        lea rcx, [messages.enter_quantity_to_sell]
         fast_call console.print_string  ; Display prompt message
 
         ._prompt_for_number_to_sell:
@@ -497,7 +475,7 @@ inventory_system:
         mov [rsp + 24], r13  ; Save nonvolatile register 
 
         ; Prompt for item name
-        lea rcx, [messages.enter_name]
+        lea rcx, [messages.enter_item_name]
         fast_call console.print_string  ; Display prompt message
 
         fast_call .select_item  ; Start item selection
@@ -510,7 +488,7 @@ inventory_system:
         sub r13d, [rax + ITEM_QUANTITY_OFFSET]  ; Calculate remaining capacity
 
         ; Prompt for the number of items to order
-        lea rcx, [messages.enter_number_to_order]
+        lea rcx, [messages.enter_quantity_to_order]
         fast_call console.print_string  ; Display prompt message
 
         ._prompt_for_number_to_order:
@@ -548,7 +526,7 @@ inventory_system:
         sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary 
 
         ; Prompt for item name
-        lea rcx, [messages.enter_name]
+        lea rcx, [messages.enter_item_name]
         fast_call console.print_string  ; Display prompt message
 
         fast_call .select_item  ; Start item selection
@@ -574,7 +552,8 @@ inventory_system:
         cmp eax, 1
         jne ._compare_to_category  ; Check for equality
 
-            ; Action here
+            mov eax, r12d
+            fast_call .modify_item_name
 
             jmp ._end_select_attribute_to_modify  ; Proceed to return
 
@@ -650,6 +629,35 @@ inventory_system:
         ; Epilog
         add rsp, 8 + 64  ; Restore the stack 
         mov r12, [rsp + 8]  ; Restore nonvolatile register 
+        ret
+
+
+    ; Prompts user for updated item name, then modifies the selected item, args(DWORD item index)
+    .modify_item_name:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        sub rsp, 64 + 8  ; ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        ; Prompt for updated item name
+        lea rcx, [messages.change_item_name]
+        fast_call console.print_string  ; Display prompt message
+
+        lea rcx, [rsp]
+        fast_call .prompt_for_new_item_name  ; Prompt for new item name
+
+        ; Modify the item
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the item
+
+        lea rcx, [rax]
+        lea rdx, [rsp]
+        fast_call string.copy  ; Modify the name attribute
+
+        ; Epilog
+        add rsp, 64 + 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
         ret
 
 
@@ -788,7 +796,7 @@ inventory_system:
         mov [rsp + 32], r14  ; Save nonvolatile register
 
         ; Prompt for item name
-        lea rcx, [messages.enter_name]
+        lea rcx, [messages.enter_item_name]
         fast_call console.print_string  ; Display prompt message
 
         fast_call .select_item  ; Start item selection
@@ -863,6 +871,50 @@ inventory_system:
         ._end_select_item:
 
         add rsp, 8 + 64  ; Restore the stack
+        ret
+
+
+    ; Prompts user for a new item name until it passes validation, args(QWORD item name string buffer pointer)    
+    .prompt_for_new_item_name:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        sub rsp, 8  ; Align the stack to a 16-byte boundary         
+        mov r12, rcx  ; Save item name string buffer pointer in nonvolatile register
+
+        ._read_and_validate_item_name:
+
+        lea rcx, [r12]
+        fast_call console.read_string  ; Read name from the console
+
+        lea rcx, [r12]
+        fast_call string.len  ; Check entered name length
+
+        cmp rax, 0
+        jne ._verify_name_uniqueness  ; Verify that the entered string is not empty and proceed
+
+            lea rcx, [messages.empty_name]
+            fast_call console.print_string  ; Notify the user that the entered name should not be empty and prompt again otherwise 
+            
+            jmp ._read_and_validate_item_name
+
+        ._verify_name_uniqueness:
+
+        lea rcx, [r12]
+        fast_call .find_item_by_name  ; Search for items with similar name
+
+        cmp rax, -1
+        je ._end_read_and_validate_item_name  ; Proceed if the entered name is unique
+
+            lea rcx, [messages.name_already_in_use]
+            fast_call console.print_string  ; Notify the user that the entered name is already in use and prompt again otherwise 
+            
+            jmp ._read_and_validate_item_name   
+
+        ._end_read_and_validate_item_name:  
+
+        ; Epilog
+        add rsp, 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
         ret
 
 
