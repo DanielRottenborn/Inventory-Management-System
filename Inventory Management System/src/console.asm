@@ -145,7 +145,7 @@ console:
         mov eax, ecx  ; Move argument to the divident register
         mov ecx, 10  ; Use ecx register as a divisor
 
-        lea rbx, [rsp + 15]  ; Initialize character pointer to the least significant digit position
+        lea r10, [rsp + 15]  ; Initialize character pointer to the least significant digit position
         mov DWORD [rsp + 16], 0x20202020  ;Fill padding with whitespaces
         mov DWORD [rsp + 20], 0x20202020
         mov BYTE  [rsp + 24], 0x20
@@ -154,14 +154,14 @@ console:
             mov edx, 0  ; Reset edx for division
             div ecx  ; Divide remaining number by ten
             add dl, 48  ; Convert the remainder to ASCII digit
-            mov [rbx], dl  ; Write it to the buffer
-            dec rbx  ; Decrement the character pointer
+            mov [r10], dl  ; Write it to the buffer
+            dec r10  ; Decrement the character pointer
 
             cmp eax, 0
             jne ._convert_digits_loop  ; Break if all digits have been processed
 
-        inc rbx  ; Correct the resulting string pointer after itteration   
-        mov [rsp + 16 + 32], rbx  ; Save string pointer in shadow space 
+        inc r10  ; Correct the resulting string pointer after itteration   
+        mov [rsp + 16 + 32], r10  ; Save string pointer in shadow space 
 
         ; Get output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
@@ -228,25 +228,25 @@ console:
 
         ; Parse an integer
         mov eax, 0  ; Initialize return value
-        lea rbx, [rsp]  ; Initialize character pointer
+        lea r10, [rsp]  ; Initialize character pointer
 
         ; Itterate through characters
         ._parse_digits_loop:
             
             ;Check if current character is a digit, stop itteration if it isn't
-            cmp BYTE [rbx], 48
+            cmp BYTE [r10], 48
             jb ._end_parse_digits_loop
 
-            cmp BYTE [rbx], 57
+            cmp BYTE [r10], 57
             ja ._end_parse_digits_loop
 
             mov ecx, 10
             mul ecx  ; 'Shift' previous digits right by 1
 
             mov ecx, 0       
-            mov cl, [rbx]  ; Load current character
+            mov cl, [r10]  ; Load current character
             sub cl, 48  ; Substract ASCII digit offset
-            inc rbx  ; Increment character pointer
+            inc r10  ; Increment character pointer
 
             add eax, ecx  ; Add current digit
             jc ._int_overflow  ; Check for addition overflow 
@@ -265,7 +265,7 @@ console:
         ._end_parse_digits_loop:
 
         ; Verify if at least one digit was parsed, display a warning message and prompt the user again otherwise
-        cmp rbx, rsp
+        cmp r10, rsp
         jne ._end_read_int
 
             ; Display a warning otherwise

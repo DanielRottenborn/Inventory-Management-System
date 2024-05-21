@@ -14,11 +14,11 @@ string:
         mov rax, 0  ; Set offset to 0
 
         ._copy_loop:
-            mov bl, [rdx + rax]  ; Moves a char from source + offset to bl
-            mov [rcx + rax], bl  ; Moves a char from bl to destination + offset
+            mov r10b, [rdx + rax]  ; Moves a char from source + offset to r10b
+            mov [rcx + rax], r10b  ; Moves a char from r10b to destination + offset
 
             inc rax  ; Increment the offset
-            cmp bl, NULL
+            cmp r10b, NULL
             jne ._copy_loop  ; Loop until the NULL character is reached and copied
 
         ret
@@ -43,11 +43,11 @@ string:
     ; Tests two strings for equality, returns 1 if strings are equal, 0 otherwise, args(QWORD NULL-terminated string pointer, QWORD NULL-terminated string pointer)    
     .compare:
         mov eax, 1  ; Initialize return value to true
-        mov rbx, 0  ; Initialize character offset to 0
+        mov r10, 0  ; Initialize character offset to 0
 
         ._compare_characters_loop:
-            mov r8b, [rcx + rbx]  ; Load characters
-            mov r9b, [rdx + rbx] 
+            mov r8b, [rcx + r10]  ; Load characters
+            mov r9b, [rdx + r10] 
 
             cmp r8b, r9b
             je ._check_terminators  ; Proceed if characters are equal
@@ -64,7 +64,7 @@ string:
             cmp r9b, NULL
             je ._end_compare_characters_loop
 
-            inc rbx  ; Increment character pointer
+            inc r10  ; Increment character pointer
             jmp ._compare_characters_loop  ; Proceed otherwise
 
         ._end_compare_characters_loop:
@@ -102,7 +102,7 @@ string:
 
     ; Removes unwanted characters, replaces tabs with whitespaces, args(QWORD NULL-terminated string pointer)    
     .format:
-        mov rbx, rcx  ; Initialize character shift location to string pointer
+        mov r10, rcx  ; Initialize character shift location to string pointer
 
         ; Itterate through all characters
         ._format_loop:
@@ -121,9 +121,9 @@ string:
             jae ._invalid_character
 
                 ;Shift a valid character otherwise
-                mov [rbx], al  ; Place current character into current shift location
+                mov [r10], al  ; Place current character into current shift location
                 inc rcx  ; Increment character pointer
-                inc rbx  ; Increment shift location
+                inc r10  ; Increment shift location
                 jmp ._format_loop  ; Continue itteration
 
             ._invalid_character:
@@ -131,13 +131,13 @@ string:
                 jmp ._format_loop  ; Continue itteration
 
             ._tab_character:
-                mov BYTE [rbx], ' '  ; Place a whitespace character into current shift location
+                mov BYTE [r10], ' '  ; Place a whitespace character into current shift location
                 inc rcx  ; Increment character pointer
-                inc rbx  ; Increment shift location
+                inc r10  ; Increment shift location
                 jmp ._format_loop  ; Continue itteration
 
             ._NULL_terminator:
-                mov [rbx], al  ; Place character into current shift location
+                mov [r10], al  ; Place character into current shift location
                 ; fallthrough to return
         ret
 

@@ -42,8 +42,8 @@ mem_copy:
         cmp rax, r8
         jae ._loop_end  ; Loop until the offset is equal to the number of bytes
 
-        mov bl, [rdx + rax]  ; Moves a byte from source + offset to bl
-        mov [rcx + rax], bl  ; Moves a byte from bl to destination + offset
+        mov r10b, [rdx + rax]  ; Moves a byte from source + offset to r10b
+        mov [rcx + rax], r10b  ; Moves a byte from r10b to destination + offset
 
         inc rax  ; Increment the offset
         jmp ._loop

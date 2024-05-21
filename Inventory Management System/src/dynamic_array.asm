@@ -92,20 +92,20 @@ dynamic_array:
         fast_call .get  ; Get pointer to the next available member location
 
         ; Push new member to the array and increment member count
-        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
+        mov r10, [rsp + 16]  ; Retrieve array struct pointer
         mov rcx, rax  ; Set destination argument
         mov rdx, [rsp + 24]  ; Retrieve new member pointer to use as a source argument
-        mov r8d, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
+        mov r8d, [r10 + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
 
-        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
+        mov eax, [r10 + ARRAY_COUNT_OFFSET]  ; Get member count
         inc eax  ; Increment member count
-        mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
+        mov [r10 + ARRAY_COUNT_OFFSET], eax  ; Update member count
 
         fast_call mem_copy  ; Copy new member to the end of the array
 
         ; Return member index
-        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
-        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get element count
+        mov r10, [rsp + 16]  ; Retrieve array struct pointer
+        mov eax, [r10 + ARRAY_COUNT_OFFSET]  ; Get element count
         dec eax  ; Decrement to get the index of the last element
 
         add rsp, 8  ; Restore the stack
@@ -116,8 +116,8 @@ dynamic_array:
     .get:
         ; Do pointer arithmetic
         mov eax, edx  ; Get index
-        mov ebx, [rcx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
-        mul rbx  ; Get offset
+        mov r10d, [rcx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
+        mul r10  ; Get offset
         add rax, [rcx]  ; Add array base pointer to offset
 
         ret
@@ -134,12 +134,12 @@ dynamic_array:
         fast_call .get     
 
         ; Set up destination argument
-        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
-        mov r9d, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
+        mov r10, [rsp + 16]  ; Retrieve array struct pointer
+        mov r9d, [r10 + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
         mov rcx, rax  ; Set destingation pointer
 
         ; Calculate memory block size to be shifted
-        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
+        mov eax, [r10 + ARRAY_COUNT_OFFSET]  ; Get member count
         mov r8d, [rsp + 24]  ; Retrieve element index
         add r8d, 1  ; Get next element index
         sub eax, r8d  ; Get the number of members to be shifted
@@ -154,19 +154,19 @@ dynamic_array:
         fast_call mem_copy
 
         ; Decrement member count
-        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
-        mov eax, [rbx + ARRAY_COUNT_OFFSET]  ; Get member count
+        mov r10, [rsp + 16]  ; Retrieve array struct pointer
+        mov eax, [r10 + ARRAY_COUNT_OFFSET]  ; Get member count
         dec eax
-        mov [rbx + ARRAY_COUNT_OFFSET], eax  ; Update member count
+        mov [r10 + ARRAY_COUNT_OFFSET], eax  ; Update member count
 
         ; Check if the capacity of the array needs to be decreased
-        mov eax, [rbx + ARRAY_CAPACITY_OFFSET]  ; Get current capacity
+        mov eax, [r10 + ARRAY_CAPACITY_OFFSET]  ; Get current capacity
         mov rdx, 0  ; Set rdx to 0 for division
         mov ecx, 4  ; Set the divisor
         div rcx  ; Divide current capacity by 4
 
         ; Compare against member count
-        cmp eax, [rbx + ARRAY_COUNT_OFFSET] 
+        cmp eax, [r10 + ARRAY_COUNT_OFFSET] 
         jbe ._end_remove  ; Skip reallocation if new capacity is less than or equal to member count
 
         ; Compare new capacity against min capacity
@@ -174,7 +174,7 @@ dynamic_array:
         jb ._end_remove  ; Skip reallocation if new capacity is less than min capacity
 
             ; Decrease capacity
-            mov rcx, rbx  ; Array struct pointer argument
+            mov rcx, r10  ; Array struct pointer argument
             mov edx, eax  ; New capacity
             fast_call ._modify_capacity  ; Reallocates memory and updates capacity
 
@@ -193,8 +193,8 @@ dynamic_array:
         mov DWORD [rcx + ARRAY_COUNT_OFFSET], 0
 
         ; Check cucrent capacity
-        mov ebx, [rcx + ARRAY_CAPACITY_OFFSET]  ; Load capacity
-        cmp ebx, 10  ; Compare against min capacity
+        mov r10d, [rcx + ARRAY_CAPACITY_OFFSET]  ; Load capacity
+        cmp r10d, 10  ; Compare against min capacity
         jbe ._end_clear  ; Skip reallocation if capacity is minimal
 
             ; Set min capacity
@@ -221,10 +221,10 @@ dynamic_array:
         je ._memory_error
 
         ; Free memory
-        mov rbx, [rsp + 16]  ; Retrieve array struct pointer 
+        mov r10, [rsp + 16]  ; Retrieve array struct pointer 
         mov rcx, rax  ; Use the handle as a first argument
         mov edx, 0  ; Allocation flags
-        mov r8, [rbx]  ; Address of the memory chunk to be released
+        mov r8, [r10]  ; Address of the memory chunk to be released
         fast_call HeapFree  ; Releases memory
 
         ; Check for errors (NULL return)
@@ -250,14 +250,14 @@ dynamic_array:
         je ._memory_error
 
         ; Reallocate memory
-        mov rbx, [rsp + 16]  ; Retrieve array struct pointer
+        mov r10, [rsp + 16]  ; Retrieve array struct pointer
         mov rcx, rax  ; Use the handle as a first argument
-        mov edx, [rbx + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
+        mov edx, [r10 + ARRAY_MEMBER_SIZE_OFFSET]  ; Get member size
         mov eax, [rsp + 24]  ; Retrieve new capacity
         mul rdx  ; Multiply by member size (affects rdx)
         mov r9, rax  ; Resulting number of bytes to reallocate
         mov edx, 0  ; Reallocation flags
-        mov r8, [rbx]  ; Address of the memory chunk to be reallocated
+        mov r8, [r10]  ; Address of the memory chunk to be reallocated
         fast_call HeapReAlloc  ; Returns a pointer to the allocated memory
 
         ; Check for errors (NULL return)
