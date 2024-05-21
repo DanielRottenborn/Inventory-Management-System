@@ -61,6 +61,7 @@ messages:
     .enter_number_to_sell: db "Enter the quantity to sell: ", NULL
     .enter_number_to_order: db "Enter the quantity to order: ", NULL
     .enter_attribute_to_modify: db "Enter the attribute to be modified: ", NULL
+    .enter_new_priority: db "Enter new priority: ", NULL
 
     .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
@@ -161,7 +162,7 @@ inventory_system:
         ret
 
 
-    ; Main application loop, clear the screen, displays the item table and waits for user action, in cycle
+    ; Main application loop, clears the screen, displays the item table and waits for user action, in cycle
     .run:
         sub rsp, 8  ; Align the stack to a 16-byte boundary 
 
@@ -207,7 +208,7 @@ inventory_system:
             fast_call console.print_string  ; Show command list
             add rsp, 8 + 64 ; Restore the stack
             jmp .await_command  ; Wait for another command
-
+             
         ._compare_to_add:
 
         ; Compare input to the add item command
@@ -562,7 +563,7 @@ inventory_system:
     .modify_item:
         ; Prolog
         mov [rsp + 8], r12  ; Save nonvolatile register 
-        sub rsp, 8 + 64 ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary 
+        sub rsp, 8 + 64  ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary 
 
         ; Prompt for item name
         lea rcx, [messages.enter_name]
@@ -619,7 +620,8 @@ inventory_system:
         cmp eax, 1
         jne ._compare_to_quantity  ; Check for equality
 
-            ; Action here
+            mov eax, r12d
+            fast_call .modify_priority
 
             jmp ._end_select_attribute_to_modify  ; Proceed to return
 
@@ -661,8 +663,35 @@ inventory_system:
         ._end_select_attribute_to_modify:
 
         ; Epilog
-        add rsp, 8 + 64 ; Restore the stack 
+        add rsp, 8 + 64  ; Restore the stack 
         mov r12, [rsp + 8]  ; Restore nonvolatile register 
+        ret
+
+
+    ; Prompts user for a new priority value, then modifies the selected item, args(DWORD item index)
+    .modify_priority:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        mov [rsp + 16], r13  ; Save nonvolatile register 
+        sub rsp, 8  ; Align the stack to a 16-byte boundary         
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        ; Prompt for new item priority
+        lea rcx, [messages.enter_new_priority]
+        fast_call console.print_string  ; Display prompt message
+        fast_call console.read_int  ; Read new priority from the console
+        mov r13d, eax  ; Save new priority in nonvolatile register
+
+        ; Modify the item
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the item
+        mov [rax + ITEM_PRIORITY_OFFSET], r13d  ; Modify the priority attribute
+  
+        ; Epilog
+        add rsp, 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        mov r13, [rsp + 16]  ; Restore nonvolatile register
         ret
 
 
