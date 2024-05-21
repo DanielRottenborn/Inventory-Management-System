@@ -51,8 +51,6 @@ messages:
                    db "    /contract - contract the item table", LF
                    db "    /back - cancel the current action", LF, LF, NULL
 
-    .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
-
     .enter_name:     db "Enter item name: ", NULL
     .enter_category: db "Enter item category: ", NULL
     .enter_priority: db "Enter item priority: ", NULL
@@ -61,17 +59,21 @@ messages:
     .enter_number_to_sell: db "Enter the quantity to sell: ", NULL
     .enter_number_to_order: db "Enter the quantity to order: ", NULL
     .enter_attribute_to_modify: db "Enter the attribute to be modified: ", NULL
-    .enter_new_priority: db "Enter new priority: ", NULL
+    .change_category: db "Change category to: ", NULL
+    .change_priority: db "Change priority to: ", NULL
+    .change_quantity: db "Change quantity to: ", NULL
 
-    .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL 
+    ; Error messages
+    .invalid_command: db ERROR_COLOR, "Invalid command, try again: ", DEFAULT_COLOR, NULL
+    .inventory_empty: db ERROR_COLOR, "This command requires a non-empty inventory, try other commands first: ", DEFAULT_COLOR, NULL
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
     .name_already_in_use: db ERROR_COLOR, "This name is already in use, try again: ", DEFAULT_COLOR, NULL
-    .entered_capacity_zero: db ERROR_COLOR, "Capacity can not be zero, try again: ", DEFAULT_COLOR, NULL
-    .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low, try again: ", DEFAULT_COLOR, NULL
+    .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low for the current item quantity, try again: ", DEFAULT_COLOR, NULL
     .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL
     .quantity_too_low_to_sell: db ERROR_COLOR, "Item quantity is too low to sell the number specified, try again: ", DEFAULT_COLOR, NULL
     .capacity_too_low_to_order: db ERROR_COLOR, "Remaining item capacity is too low to order the number specified, try again: ", DEFAULT_COLOR, NULL
     .invalid_attribute: db ERROR_COLOR, "Enter a valid atttribute (name, category, priority, quantity, or capacity): ", DEFAULT_COLOR, NULL
+    .entered_quantity_too_high: db ERROR_COLOR, "Entered quantity is to high for the current capacity, try again: ", DEFAULT_COLOR, NULL
 
 commands:
     .help: db "/help", NULL
@@ -421,16 +423,6 @@ inventory_system:
         fast_call console.read_int  ; Read capacity from the console
         mov [rsp + ITEM_CAPACITY_OFFSET], eax  ; Save in temporary buffer
 
-        cmp eax, 0
-        ja ._check_against_quantity  ; Check if capacity is not zero and proceed
-
-            lea rcx, [messages.entered_capacity_zero]
-            fast_call console.print_string  ; Notify the user that entered capacity is too low and prompt again otherwise 
-            
-            jmp ._prompt_for_capacity
-
-        ._check_against_quantity:
-
         cmp eax, [rsp + ITEM_QUANTITY_OFFSET]
         jae ._push_new_item  ; Check if capacity is equal to or greater than quantity entered and proceed
 
@@ -606,7 +598,8 @@ inventory_system:
         cmp eax, 1
         jne ._compare_to_priority  ; Check for equality
 
-            ; Action here
+            mov eax, r12d
+            fast_call .modify_category
 
             jmp ._end_select_attribute_to_modify  ; Proceed to return
 
@@ -635,7 +628,8 @@ inventory_system:
         cmp eax, 1
         jne ._compare_to_capacity  ; Check for equality
 
-            ; Action here
+            mov eax, r12d
+            fast_call .modify_quantity
 
             jmp ._end_select_attribute_to_modify  ; Proceed to return
 
@@ -668,7 +662,36 @@ inventory_system:
         ret
 
 
-    ; Prompts user for a new priority value, then modifies the selected item, args(DWORD item index)
+    ; Prompts user for updated category name, then modifies the selected item, args(DWORD item index)
+    .modify_category:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        sub rsp, 64 + 8  ; ; Reserve space for a temporary buffer and align the stack to a 16-byte boundary        
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        ; Prompt for updated item category
+        lea rcx, [messages.change_category]
+        fast_call console.print_string  ; Display prompt message
+
+        lea rcx, [rsp]
+        fast_call console.read_string  ; Read updated category from the console
+
+        ; Modify the item
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the item
+
+        lea rcx, [rax + ITEM_CATEGORY_OFFSET]
+        lea rdx, [rsp]
+        fast_call string.copy  ; Modify the category attribute
+
+        ; Epilog
+        add rsp, 64 + 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        ret
+
+
+    ; Prompts user for updated priority value, then modifies the selected item, args(DWORD item index)
     .modify_priority:
         ; Prolog
         mov [rsp + 8], r12  ; Save nonvolatile register
@@ -676,17 +699,58 @@ inventory_system:
         sub rsp, 8  ; Align the stack to a 16-byte boundary         
         mov r12d, eax  ; Save item index in nonvolatile register
 
-        ; Prompt for new item priority
-        lea rcx, [messages.enter_new_priority]
+        ; Prompt for updated item priority
+        lea rcx, [messages.change_priority]
         fast_call console.print_string  ; Display prompt message
-        fast_call console.read_int  ; Read new priority from the console
-        mov r13d, eax  ; Save new priority in nonvolatile register
+        fast_call console.read_int  ; Read updated priority from the console
+        mov r13d, eax  ; Save updated priority in nonvolatile register
 
         ; Modify the item
         lea rcx, [items]
         mov edx, r12d
         fast_call dynamic_array.get  ; Get pointer to the item
         mov [rax + ITEM_PRIORITY_OFFSET], r13d  ; Modify the priority attribute
+  
+        ; Epilog
+        add rsp, 8  ; Restore the stack 
+        mov r12, [rsp + 8]  ; Restore nonvolatile register
+        mov r13, [rsp + 16]  ; Restore nonvolatile register
+        ret
+
+
+    ; Prompts user for updated quantity, then modifies the selected item, args(DWORD item index)
+    .modify_quantity:
+        ; Prolog
+        mov [rsp + 8], r12  ; Save nonvolatile register
+        mov [rsp + 16], r13  ; Save nonvolatile register 
+        sub rsp, 8  ; Align the stack to a 16-byte boundary         
+        mov r12d, eax  ; Save item index in nonvolatile register
+
+        ; Prompt for updated item quantity
+        lea rcx, [messages.change_quantity]
+        fast_call console.print_string  ; Display prompt message
+
+        ._prompt_for_updated_quantity:
+
+        fast_call console.read_int  ; Read updated quantity from the console
+        mov r13d, eax  ; Save updated quantity in nonvolatile register
+
+        ; Validate updated quantity
+        lea rcx, [items]
+        mov edx, r12d
+        fast_call dynamic_array.get  ; Get pointer to the item
+
+        cmp r13d, [rax + ITEM_CAPACITY_OFFSET] 
+        jbe ._update_item_quantity  ; Proceed if updated quantity is less than or equal to current item capacity
+
+            lea rcx, [messages.entered_quantity_too_high]
+            fast_call console.print_string  ; Notify the user that the capacity is to low for the updated quantity and prompt again           
+
+            jmp ._prompt_for_updated_quantity  ; Prompt the user again
+
+        ._update_item_quantity:
+
+        mov [rax + ITEM_QUANTITY_OFFSET], r13d  ; Modify the quantity attribute
   
         ; Epilog
         add rsp, 8  ; Restore the stack 
