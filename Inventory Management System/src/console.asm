@@ -54,7 +54,10 @@ preserved_env:
 
     .return_address: resq 1
 
-abort_command: resq 1  ; Pointer to the command string used to abort the current action
+console_abort_command: resq 1  ; Pointer to the command string used to abort the current action
+
+console_input_handle: resq 1  ; Handles for standard IO
+console_output_handle: resq 1
 
 
 ; Text section
@@ -70,11 +73,17 @@ console:
         sub rsp, 8  ; Align the stack to a 16-byte boundary
         mov [rsp + 16], rcx  ; Save string pointer in shadow space
 
-        mov [abort_command], rdx  ; Save abortcommand
+        mov [console_abort_command], rdx  ; Save abort command
 
-        ; Get output handle
+        ; Get standard input handle
+        mov ecx, -10  ; Set to -10 to receive an input handle
+        fast_call GetStdHandle  ; Returns standard input handle
+        mov [console_input_handle], rax  ; Save input handle for future use
+
+        ; Get standard output handle
         mov ecx, -11  ; Set to -11 to receive an output handle
         fast_call GetStdHandle  ; Returns standard output handle
+        mov [console_output_handle], rax  ; Save output handle for future use
 
         mov rcx, rax  ; Set output handle
         mov edx, 1 | 4  ; Enable processed output and virtual terminal processing
@@ -161,15 +170,10 @@ console:
             jne ._convert_digits_loop  ; Break if all digits have been processed
 
         inc r10  ; Correct the resulting string pointer after itteration   
-        mov [rsp + 16 + 32], r10  ; Save string pointer in shadow space 
-
-        ; Get output handle
-        mov ecx, -11  ; Set to -11 to receive an output handle
-        fast_call GetStdHandle  ; Returns standard output handle
 
         ; Write to standard output
-        mov rcx, rax  ; Set output handle
-        mov rdx, [rsp + 16 + 32]  ; Retrieve string pointer
+        mov rcx, [console_output_handle]  ; Set output handle
+        mov rdx, r10  ; Use calculated string pointer
         mov r8d, 10  ; Print 10 characters
         lea r9, [rsp + 24 + 32]  ; The procedure will save the number of characters it will have written in shadow space
         sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
@@ -193,16 +197,11 @@ console:
 
         ; Calculate string length
         fast_call string.len
-        mov [rsp + 24], rax  ; Save string length in shadow space
-
-        ; Get output handle
-        mov ecx, -11  ; Set to -11 to receive an output handle
-        fast_call GetStdHandle  ; Returns standard output handle
 
         ; Write to standard output
-        mov rcx, rax  ; Set output handle
+        mov rcx, [console_output_handle]  ; Set output handle
         mov rdx, [rsp + 16]  ; Retrieve string pointer
-        mov r8d, [rsp + 24]  ; Retrieve string length
+        mov r8d, eax  ; String length previously calculated
         lea r9, [rsp + 32]  ; The procedure will save the number of characters it will have written in shadow space
         sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
         mov QWORD [rsp + 32], NULL  ; Reserved NULL parameter
@@ -319,7 +318,7 @@ console:
 
         ; Compare input to the abort command
         lea rcx, [rsp]
-        mov rdx, [abort_command]
+        mov rdx, [console_abort_command]
         fast_call string.compare
 
         cmp DWORD [preserved_env.saved], 1
@@ -347,15 +346,10 @@ console:
         lea rcx, [console_control.apply_input_color]
         fast_call .print_string
 
-        ; Get input handle
-        mov ecx, -10  ; Set to -10 to receive an input handle
-        fast_call GetStdHandle  ; Returns standard input handle
-        mov [rsp + 32], rax  ; Save input handle in shadow space
-
         ; Read from standard input
         sub rsp, 80  ; Reserve space for a temporary buffer
-        mov rcx, rax  ; Set input handle
-        lea rdx, [rsp]  ; Set destination buffer
+        mov rcx, [console_input_handle]  ; Set input handle
+        lea rdx, [rsp]  ; Set temporary destination buffer
         mov r8d, 66  ; Read 63 characters + CR + LF + another character to see if input is greater tan 63 characters
         lea r9, [rsp + 24 + 80]  ; The procedure will save the number of characters it will have read in shadow space
         sub rsp, 48  ; Reserve shadow space for 5 parameters and preserve stack alignment
@@ -401,7 +395,7 @@ console:
                 jb ._end_flush_buffer  ; Stop flushing if the procedure has read less than 64 characters
 
                 ; Read remaining characters from standard input
-                mov rcx, [rsp + 32 + 80]  ; Retrieve standard input handle
+                mov rcx, [console_input_handle]  ; Retrieve standard input handle
                 lea rdx, [rsp]  ; Specify the discard buffer
                 mov r8d, 66  ; Read 66 characters
                 lea r9, [rsp + 24 + 80]  ; The procedure will save the number of characters it will have read in shadow space
