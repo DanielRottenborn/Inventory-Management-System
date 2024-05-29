@@ -252,4 +252,45 @@ string:
         ret
 
 
+    ; Returns 1 if the main string contains a pattern string supplied, 0 otherwise (Naive implementation will do for now, KMP would be better)
+    ; args(QWORD main string pointer, QWORD pattern string pointer)
+    .is_substr:
+        mov r8, rcx  ; Initialize main string current character pointer
+        mov r9, rdx  ; Initialize pattern string current character pointer
+
+        ; Match characters
+        ._match_characters_loop:
+            mov r10b, [r8]  ; Load current character from the main string
+            mov r11b, [r9]  ; Load current character from the pattern string
+
+            cmp r11b, NULL
+            je ._match  ; Match is found in case the current pattern string character is a NULL terminator
+
+            cmp r10b, NULL
+            je ._no_match  ; Match is not found in case the current main string character is a NULL terminator
+
+            cmp r10b, r11b
+            je ._continue_matching  ; Continue matching if the characters are equal
+
+                inc rcx  ; Increment main string pointer to begin matching with an offset otherwise
+                mov r8, rcx  ; Reset both character pointers and continue
+                mov r9, rdx                            
+                jmp ._match_characters_loop
+
+
+            ._continue_matching:
+                
+                inc r8  ; Increment both character pointers and continue matching
+                inc r9
+                jmp ._match_characters_loop
+
+        ._match:
+            mov rax, 1
+            ret
+
+        ._no_match:
+            mov rax, 0
+            ret
+
+
 %endif
