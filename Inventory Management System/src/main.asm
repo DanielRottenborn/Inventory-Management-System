@@ -49,7 +49,8 @@ messages:
                    db "    /clear - remove all items", LF
                    db "    /expand - expand the item table", LF
                    db "    /contract - contract the item table", LF
-                   db "    /back - cancel the current action", LF, LF, NULL
+                   db "    /back - cancel the current action", LF
+                   db "    /exit - exit the application", LF, LF, NULL
 
     ; Input messages
     .enter_item_name:     db "Enter item name: ", NULL
@@ -93,6 +94,7 @@ commands:
     .expand: db "/expand", NULL
     .contract: db "/contract", NULL
     .back: db "/back", NULL
+    .exit: db "/exit", NULL
 
 attr_names:
     .name: db "name", NULL
@@ -337,10 +339,28 @@ inventory_system:
         fast_call string.compare  
 
         cmp eax, 1
-        jne ._invalid_command ; Check for equality
+        jne ._compare_to_exit  ; Check for equality
 
             mov DWORD [item_table.contract], 1  ; Change table contraction setting            
             jmp ._end_await_command
+
+        ._compare_to_exit:        
+
+       ; Compare input to the exit command
+        lea rcx, [rsp]
+        lea rdx, [commands.exit]
+        fast_call string.compare  
+
+        cmp eax, 1
+        jne ._invalid_command  ; Check for equality
+            
+            lea rcx, [items]
+            fast_call dynamic_array.free  ; Free memory used by dynamic arrays
+
+            lea rcx, [display_sequence]
+            fast_call dynamic_array.free  ; Free memory used by dynamic arrays
+       
+            jmp exit
 
         ._invalid_command:
 
