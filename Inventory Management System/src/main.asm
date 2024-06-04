@@ -48,7 +48,7 @@ messages:
                                     db "    /remove - remove an item", LF
                                     db "    /clear - remove all items", LF
                                     db "    /expand - expand the item table", LF
-                                    db "    /contract - contract the item table", LF
+                                    db "    /contract - contract the item table (default)", LF
                                     db "    /back - cancel the current action", LF
                                     db "    /exit - exit the application", LF, LF, NULL
 
