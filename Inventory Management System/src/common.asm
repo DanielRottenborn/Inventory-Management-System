@@ -6,6 +6,7 @@ bits 64  ; Target 64-bit architecture exclusively
 
 ; Externals
 extern ExitProcess  ; Win32 API exit procedure
+extern Sleep  ; Suspends the execution of the current thread for a time specified
 
 ; Constants
 NULL equ 0  ; NULL
@@ -14,6 +15,7 @@ ESC equ 27  ; Escape character
 
 ; Macros
 %define DEFAULT_COLOR ESC, "[97m"  ; Resets text color
+%define HIGHLIGHT_COLOR ESC, "[38;2;215;55;120m"  ; Changes text color to dark cyan
 %define INPUT_COLOR ESC, "[38;2;145;250;150m"  ; Changes text color to bright green
 %define WARNING_COLOR ESC, "[93m"  ; Changes text color to bright yellow
 %define ERROR_COLOR ESC, "[38;2;255;145;65m"  ; Changes text color to bright orange

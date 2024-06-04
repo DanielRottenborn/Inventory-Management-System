@@ -279,6 +279,9 @@ dynamic_array:
         lea rcx, [array_messages.memory_error]  ; Notify the user that an error occured while managing heap memory
         fast_call console.print_string  ; Print error message
 
+        mov ecx, 2000
+        fast_call Sleep  ; Sleep for 2000 milliseconds to display the error message before halting
+
         jmp exit
 
 

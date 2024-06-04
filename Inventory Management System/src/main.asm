@@ -40,17 +40,17 @@ messages:
     .remark: db " *Items in quantity less than 3 are highlighted in red.", LF
              db " *Type /help to get the list of available commands.", LF, LF, NULL
 
-    .command_list: db "List of available commands:", LF
-                   db "    /add - add a new item", LF
-                   db "    /sell - sell a certain quantity of items", LF
-                   db "    /order - order a certain quantity of items", LF
-                   db "    /modify - modify an item", LF
-                   db "    /remove - remove an item", LF
-                   db "    /clear - remove all items", LF
-                   db "    /expand - expand the item table", LF
-                   db "    /contract - contract the item table", LF
-                   db "    /back - cancel the current action", LF
-                   db "    /exit - exit the application", LF, LF, NULL
+    .command_list: db HIGHLIGHT_COLOR, "List of available commands:", DEFAULT_COLOR, LF
+                                    db "    /add - add a new item", LF
+                                    db "    /sell - sell a certain quantity of items", LF
+                                    db "    /order - order a certain quantity of items", LF
+                                    db "    /modify - modify an item", LF
+                                    db "    /remove - remove an item", LF
+                                    db "    /clear - remove all items", LF
+                                    db "    /expand - expand the item table", LF
+                                    db "    /contract - contract the item table", LF
+                                    db "    /back - cancel the current action", LF
+                                    db "    /exit - exit the application", LF, LF, NULL
 
     ; Input messages
     .enter_item_name:     db "Enter item name: ", NULL
@@ -75,7 +75,7 @@ messages:
 
     .empty_name: db ERROR_COLOR, "Item name should not be blank, try again: ", DEFAULT_COLOR, NULL
     .name_already_in_use: db ERROR_COLOR, "This name is already in use, try again: ", DEFAULT_COLOR, NULL
-    .entered_quantity_too_high: db ERROR_COLOR, "Entered quantity is to high for the current capacity, try again: ", DEFAULT_COLOR, NULL
+    .entered_quantity_too_high: db ERROR_COLOR, "Entered quantity is too high for the current capacity, try again: ", DEFAULT_COLOR, NULL
     .entered_capacity_too_low: db ERROR_COLOR, "Entered capacity is too low for the current item quantity, try again: ", DEFAULT_COLOR, NULL
 
     .item_not_found: db ERROR_COLOR, "Item not found, try again: ", DEFAULT_COLOR, NULL

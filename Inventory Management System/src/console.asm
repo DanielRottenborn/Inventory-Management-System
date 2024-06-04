@@ -258,6 +258,9 @@ console:
                 lea rcx, [console_messages.integer_too_large]
                 fast_call .print_string
 
+                mov ecx, 1000
+                fast_call Sleep  ; Sleep for 1000 milliseconds to prevent the warning message from immediately flushing in certain scenarios
+
                 mov eax, -1
                 jmp ._end_read_int  ; Load max int as a return value and end the procedure 
    
@@ -305,6 +308,9 @@ console:
 
             lea rcx, [console_messages.input_too_large]  ; Notify the user that input string will be trimmed
             fast_call .print_string  ; Print warning message
+
+            mov ecx, 1000
+            fast_call Sleep  ; Sleep for 1000 milliseconds to prevent the warning message from immediately flushing in certain scenarios
 
         ._check_for_abort_command:
 
@@ -426,6 +432,9 @@ console:
     ._input_error:
         lea rcx, [console_messages.input_error]  ; Notify the user that an error occured while reading input
         fast_call .print_string  ; Print error message
+
+        mov ecx, 2000
+        fast_call Sleep  ; Sleep for 2000 milliseconds to display the error message before halting
 
         jmp exit
 
